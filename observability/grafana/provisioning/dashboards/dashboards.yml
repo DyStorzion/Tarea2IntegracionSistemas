@@ -1,0 +1,9 @@
+apiVersion: 1
+
+# Carga automáticamente los dashboards JSON de observability/grafana/dashboards/
+providers:
+  - name: cowork
+    folder: Cowork
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,158 @@
+# Sistema de reservas de cowork — Encargo Unidad 3, Forma O.
+# Levantar todo:  docker compose up --build
+# Solo el gateway (Kong) expone un puerto al exterior.
+# Prometheus y Grafana se publican solo en localhost como herramientas de evidencia.
+
+name: cowork
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+
+x-service: &service
+  restart: unless-stopped
+
+services:
+  # ---------------------------------------------------------------- Exposición
+  gateway:
+    image: kong:3.9
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: "off"
+      KONG_STATUS_LISTEN: 0.0.0.0:8100
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      # Caché DNS corta: al recrear un servicio cambia su IP y Kong debe dejar de usar la anterior.
+      KONG_DNS_VALID_TTL: "5"
+      KONG_DNS_STALE_TTL: "0"
+    volumes:
+      - ./gateway/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bff-web:
+    <<: *service
+    build: ./services/bff-web
+    environment:
+      RESERVAS_URL: http://reservas:8000
+      ESPACIOS_URL: http://espacios:8000
+      PAGOS_URL: http://pagos:8000
+      ACCESO_URL: http://acceso:8000
+
+  # ---------------------------------------------------------------- Saga
+  reservas:
+    <<: *service
+    build: ./services/reservas
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cowork}:${POSTGRES_PASSWORD:-cowork}@db-reservas:5432/reservas
+      ESPACIOS_URL: http://espacios:8000
+      PAGOS_URL: http://pagos:8000
+      ACCESO_URL: http://acceso:8000
+      RESILIENCE_ENABLED: ${RESILIENCE_ENABLED:-true}
+    depends_on:
+      db-reservas:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- Dominio
+  espacios:
+    <<: *service
+    build: ./services/espacios
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cowork}:${POSTGRES_PASSWORD:-cowork}@db-espacios:5432/espacios
+    depends_on:
+      db-espacios:
+        condition: service_healthy
+
+  pagos:
+    <<: *service
+    build: ./services/pagos
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cowork}:${POSTGRES_PASSWORD:-cowork}@db-pagos:5432/pagos
+    depends_on:
+      db-pagos:
+        condition: service_healthy
+
+  acceso:
+    <<: *service
+    build: ./services/acceso
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cowork}:${POSTGRES_PASSWORD:-cowork}@db-acceso:5432/acceso
+    depends_on:
+      db-acceso:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- Bases de datos
+  db-reservas:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: reservas
+      POSTGRES_USER: ${POSTGRES_USER:-cowork}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cowork}
+
+  db-espacios:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: espacios
+      POSTGRES_USER: ${POSTGRES_USER:-cowork}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cowork}
+
+  db-pagos:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: pagos
+      POSTGRES_USER: ${POSTGRES_USER:-cowork}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cowork}
+
+  db-acceso:
+    <<: *postgres
+    environment:
+      POSTGRES_DB: acceso
+      POSTGRES_USER: ${POSTGRES_USER:-cowork}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cowork}
+
+  # ---------------------------------------------------------------- Observabilidad
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+  # ---------------------------------------------------------------- Pruebas de carga
+  # No arranca con "up". Uso: docker compose run --rm k6 run /scripts/smoke.js
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["carga"]
+    environment:
+      BASE_URL: http://gateway:8000
+    volumes:
+      - ./k6:/scripts:ro
