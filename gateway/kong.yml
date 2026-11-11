@@ -25,6 +25,16 @@ services:
         paths: [/mis-reservas]
         strip_path: false
 
+# Cliente identificado por el claim `iss` del JWT (plugin jwt, key_claim_name: iss).
+# DEV: secreto en el repo. En producción iría en un vault; para el encargo basta
+# con que coincida con JWT_SECRET de scripts/generar_token.py.
+consumers:
+  - username: cliente-demo
+    jwt_secrets:
+      - key: cliente-demo
+        algorithm: HS256
+        secret: cowork-dev-secret-hs256-0123456789abcdef
+
 plugins:
   # D-28: UUID por petición, enviado a los servicios y devuelto al cliente
   - name: correlation-id
@@ -32,3 +42,10 @@ plugins:
       header_name: X-Request-ID
       generator: uuid
       echo_downstream: true
+
+  # D-04: autenticación central. Los servicios internos confían en que la
+  # petición ya pasó por aquí (Kong agrega X-Consumer-Username).
+  - name: jwt
+    config:
+      key_claim_name: iss
+      claims_to_verify: [exp]
