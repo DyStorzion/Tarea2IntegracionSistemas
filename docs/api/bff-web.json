@@ -1,0 +1,332 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BFF Web",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mis-reservas/{saga_id}": {
+      "get": {
+        "summary": "Mi Reserva",
+        "description": "Vista de una reserva para el cliente web (contrato; responde 501 hasta implementarse).\n\nConsulta en paralelo, cada una con timeout:\n  GET espacios /reservas-espacio/{saga_id}, GET pagos /cobros/{saga_id}, GET acceso /accesos/{saga_id}.\nSi una fuente no responde, la vista se entrega igual con `degradado: true`;\nsi la que falla es Acceso, `acceso.qr` vale \"no disponible\".",
+        "operationId": "mi_reserva_mis_reservas__saga_id__get",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiReservaOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESERVA_NO_EXISTE (Espacios no conoce ese saga_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccesoVista": {
+        "properties": {
+          "qr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr",
+            "description": "QR de la puerta; \"no disponible\" si Acceso no respondió; null si no se habilitó"
+          },
+          "estado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estado",
+            "description": "Estado informado por Acceso (HABILITADO, REVOCADO)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "qr"
+        ],
+        "title": "AccesoVista"
+      },
+      "Error": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "examples": [
+              "RESERVA_NO_EXISTE"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje",
+            "examples": [
+              "No hay una reserva con ese saga_id"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "title": "Error"
+      },
+      "ErrorRespuesta": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorRespuesta"
+      },
+      "EspacioVista": {
+        "properties": {
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "title": "Bloque"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "description": "Estado informado por Espacios (RESERVADA, LIBERADA)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "espacio_id",
+          "fecha",
+          "bloque",
+          "estado"
+        ],
+        "title": "EspacioVista"
+      },
+      "FuenteDatos": {
+        "type": "string",
+        "enum": [
+          "ESPACIOS",
+          "PAGOS",
+          "ACCESO"
+        ],
+        "title": "FuenteDatos"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MiReservaOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "espacio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EspacioVista"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null si Espacios no respondió"
+          },
+          "pago": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PagoVista"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null si no hubo cobro o si Pagos no respondió"
+          },
+          "acceso": {
+            "$ref": "#/components/schemas/AccesoVista"
+          },
+          "degradado": {
+            "type": "boolean",
+            "title": "Degradado",
+            "description": "true si alguna fuente no respondió y la vista está incompleta"
+          },
+          "no_disponibles": {
+            "items": {
+              "$ref": "#/components/schemas/FuenteDatos"
+            },
+            "type": "array",
+            "title": "No Disponibles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "espacio",
+          "pago",
+          "acceso",
+          "degradado"
+        ],
+        "title": "MiReservaOut",
+        "examples": [
+          {
+            "acceso": {
+              "qr": "no disponible"
+            },
+            "degradado": true,
+            "espacio": {
+              "bloque": 9,
+              "espacio_id": "SALA-A",
+              "estado": "RESERVADA",
+              "fecha": "2026-11-20"
+            },
+            "no_disponibles": [
+              "ACCESO"
+            ],
+            "pago": {
+              "estado": "COBRADO",
+              "monto": 15000
+            },
+            "saga_id": "3f6c2a9e-8d1b-4c1e-9a57-2b0f6f1d7c42"
+          }
+        ]
+      },
+      "PagoVista": {
+        "properties": {
+          "monto": {
+            "type": "integer",
+            "title": "Monto"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "description": "Estado informado por Pagos (COBRADO, REEMBOLSADO)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "monto",
+          "estado"
+        ],
+        "title": "PagoVista"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

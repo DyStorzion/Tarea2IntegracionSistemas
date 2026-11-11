@@ -1,0 +1,558 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Servicio Reservas (orquestador de la Saga)",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reservas": {
+      "post": {
+        "summary": "Crear Reserva",
+        "description": "Ejecuta la Saga completa y responde con su resultado final (respuesta síncrona).\n\nEl cuerpo de la respuesta es siempre SagaOut, también cuando la saga no se confirma:\nel código HTTP y el campo `error` indican el motivo, y `pasos` contiene el saga log.",
+        "operationId": "crear_reserva_reservas_post",
+        "parameters": [
+          {
+            "name": "x-consumer-username",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Cliente autenticado; lo agrega Kong tras validar el JWT",
+              "title": "X-Consumer-Username"
+            },
+            "description": "Cliente autenticado; lo agrega Kong tras validar el JWT"
+          },
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opcional. Si se repite, devuelve la misma saga en vez de crear otra (evita dobles cobros)",
+              "title": "Idempotency-Key"
+            },
+            "description": "Opcional. Si se repite, devuelve la misma saga en vez de crear otra (evita dobles cobros)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservaIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Repetición con la misma Idempotency-Key: devuelve la saga ya ejecutada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "COMPENSADA · PAGO_RECHAZADO: se liberó el espacio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RECHAZADA · ESPACIO_NO_EXISTE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RECHAZADA · FRANJA_OCUPADA: no hubo nada que compensar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Una dependencia falló o no respondió a tiempo (ESPACIOS_FALLO, PAGOS_FALLO, ACCESO_FALLO): COMPENSADA. Si además falló una compensación: COMPENSACION_PENDIENTE · COMPENSACION_FALLIDA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Fail-fast de resiliencia, con encabezado Retry-After. ACCESO_NO_DISPONIBLE (circuito abierto): RECHAZADA si se detectó antes de empezar, COMPENSADA si ocurrió en el paso 3. ACCESO_SATURADO (Bulkhead sin cupo en el paso 3): COMPENSADA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reservas/{saga_id}": {
+      "get": {
+        "summary": "Obtener Reserva",
+        "description": "Estado de la saga y su saga log.",
+        "operationId": "obtener_reserva_reservas__saga_id__get",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SAGA_NO_EXISTE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "examples": [
+              "FRANJA_OCUPADA"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje",
+            "examples": [
+              "SALA-A ya está reservada el 2026-11-20 en el bloque 9"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "title": "Error"
+      },
+      "ErrorRespuesta": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorRespuesta"
+      },
+      "EstadoSaga": {
+        "type": "string",
+        "enum": [
+          "EN_CURSO",
+          "CONFIRMADA",
+          "COMPENSANDO",
+          "COMPENSADA",
+          "RECHAZADA",
+          "COMPENSACION_PENDIENTE"
+        ],
+        "title": "EstadoSaga"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "NombrePaso": {
+        "type": "string",
+        "enum": [
+          "RESERVAR_ESPACIO",
+          "COBRAR",
+          "HABILITAR_ACCESO",
+          "REVOCAR_ACCESO",
+          "REEMBOLSAR",
+          "LIBERAR_ESPACIO"
+        ],
+        "title": "NombrePaso"
+      },
+      "Paso": {
+        "properties": {
+          "nombre": {
+            "$ref": "#/components/schemas/NombrePaso"
+          },
+          "resultado": {
+            "$ref": "#/components/schemas/ResultadoPaso"
+          },
+          "codigo_http": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Http",
+            "description": "Código que respondió la dependencia, si respondió"
+          },
+          "detalle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalle"
+          },
+          "inicio": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Inicio"
+          },
+          "duracion_ms": {
+            "type": "integer",
+            "title": "Duracion Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nombre",
+          "resultado",
+          "inicio",
+          "duracion_ms"
+        ],
+        "title": "Paso"
+      },
+      "ReservaIn": {
+        "properties": {
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "maximum": 19.0,
+            "minimum": 8.0,
+            "title": "Bloque",
+            "description": "Hora de inicio; el bloque cubre [bloque:00, bloque+1:00)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "espacio_id",
+          "fecha",
+          "bloque"
+        ],
+        "title": "ReservaIn",
+        "examples": [
+          {
+            "bloque": 9,
+            "espacio_id": "SALA-A",
+            "fecha": "2026-11-20"
+          }
+        ]
+      },
+      "ResultadoPaso": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "ERROR",
+          "TIMEOUT",
+          "RECHAZADO"
+        ],
+        "title": "ResultadoPaso"
+      },
+      "SagaOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoSaga"
+          },
+          "cliente_id": {
+            "type": "string",
+            "title": "Cliente Id"
+          },
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "title": "Bloque"
+          },
+          "precio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precio",
+            "description": "Lo informa Espacios en el paso 1"
+          },
+          "qr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr",
+            "description": "Solo si la saga quedó CONFIRMADA"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motivo cuando la saga no quedó CONFIRMADA"
+          },
+          "pasos": {
+            "items": {
+              "$ref": "#/components/schemas/Paso"
+            },
+            "type": "array",
+            "title": "Pasos",
+            "description": "Saga log: pasos y compensaciones en el orden en que se ejecutaron"
+          },
+          "creada_en": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Creada En"
+          },
+          "actualizada_en": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Actualizada En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "estado",
+          "cliente_id",
+          "espacio_id",
+          "fecha",
+          "bloque",
+          "pasos",
+          "creada_en",
+          "actualizada_en"
+        ],
+        "title": "SagaOut",
+        "examples": [
+          {
+            "actualizada_en": "2026-11-11T14:00:00.078Z",
+            "bloque": 9,
+            "cliente_id": "cliente-demo",
+            "creada_en": "2026-11-11T14:00:00.005Z",
+            "error": {
+              "codigo": "ACCESO_FALLO",
+              "mensaje": "Acceso respondió 500"
+            },
+            "espacio_id": "SALA-A",
+            "estado": "COMPENSADA",
+            "fecha": "2026-11-20",
+            "pasos": [
+              {
+                "codigo_http": 201,
+                "duracion_ms": 12,
+                "inicio": "2026-11-11T14:00:00.010Z",
+                "nombre": "RESERVAR_ESPACIO",
+                "resultado": "OK"
+              },
+              {
+                "codigo_http": 201,
+                "duracion_ms": 18,
+                "inicio": "2026-11-11T14:00:00.025Z",
+                "nombre": "COBRAR",
+                "resultado": "OK"
+              },
+              {
+                "codigo_http": 500,
+                "detalle": "ERROR_SIMULADO",
+                "duracion_ms": 9,
+                "inicio": "2026-11-11T14:00:00.045Z",
+                "nombre": "HABILITAR_ACCESO",
+                "resultado": "ERROR"
+              },
+              {
+                "codigo_http": 200,
+                "duracion_ms": 11,
+                "inicio": "2026-11-11T14:00:00.056Z",
+                "nombre": "REEMBOLSAR",
+                "resultado": "OK"
+              },
+              {
+                "codigo_http": 200,
+                "duracion_ms": 8,
+                "inicio": "2026-11-11T14:00:00.069Z",
+                "nombre": "LIBERAR_ESPACIO",
+                "resultado": "OK"
+              }
+            ],
+            "precio": 15000,
+            "saga_id": "3f6c2a9e-8d1b-4c1e-9a57-2b0f6f1d7c42"
+          }
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

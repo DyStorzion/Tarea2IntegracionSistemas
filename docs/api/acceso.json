@@ -1,0 +1,566 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Servicio Acceso (controlador de puerta simulado)",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accesos": {
+      "post": {
+        "summary": "Habilitar",
+        "description": "Paso 3 de la Saga: habilita la puerta y devuelve el QR. Idempotente por saga_id.",
+        "operationId": "habilitar_accesos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccesoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccesoOut"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Repetición con el mismo saga_id: devuelve el acceso existente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccesoOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SAGA_ANULADA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SIMULADO (modo error)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SERVICIO_NO_DISPONIBLE (modo down)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accesos/{saga_id}/revocar": {
+      "post": {
+        "summary": "Revocar",
+        "description": "Compensación del paso 3. Responde 200 salvo falla inyectada.\n\n- Acceso existente: queda REVOCADO (si ya lo estaba, no hace nada).\n- Sin acceso para ese saga_id: registra la saga como ANULADA.",
+        "operationId": "revocar_accesos__saga_id__revocar_post",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevocacionOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SIMULADO (modo error)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SERVICIO_NO_DISPONIBLE (modo down)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accesos/{saga_id}": {
+      "get": {
+        "summary": "Obtener",
+        "description": "Consulta usada por el BFF.",
+        "operationId": "obtener_accesos__saga_id__get",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccesoOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ACCESO_NO_EXISTE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SIMULADO (modo error)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "SERVICIO_NO_DISPONIBLE (modo down)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/chaos": {
+      "get": {
+        "summary": "Ver Chaos",
+        "description": "Modo de falla activo.",
+        "operationId": "ver_chaos_admin_chaos_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChaosOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Chaos",
+        "description": "Cambia el modo de falla. Afecta solo a las rutas de negocio (no a /health, /metrics ni /admin).",
+        "operationId": "chaos_admin_chaos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChaosIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChaosOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccesoIn": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "cliente_id": {
+            "type": "string",
+            "title": "Cliente Id"
+          },
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "maximum": 19.0,
+            "minimum": 8.0,
+            "title": "Bloque"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "cliente_id",
+          "espacio_id",
+          "fecha",
+          "bloque"
+        ],
+        "title": "AccesoIn",
+        "examples": [
+          {
+            "bloque": 9,
+            "cliente_id": "cliente-demo",
+            "espacio_id": "SALA-A",
+            "fecha": "2026-11-20",
+            "saga_id": "3f6c2a9e-8d1b-4c1e-9a57-2b0f6f1d7c42"
+          }
+        ]
+      },
+      "AccesoOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "cliente_id": {
+            "type": "string",
+            "title": "Cliente Id"
+          },
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "title": "Bloque"
+          },
+          "qr": {
+            "type": "string",
+            "title": "Qr",
+            "description": "Código que abre la puerta",
+            "examples": [
+              "QR-7Q2M-91XK"
+            ]
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoAcceso"
+          },
+          "valido_desde": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valido Desde"
+          },
+          "valido_hasta": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valido Hasta"
+          },
+          "actualizado_en": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Actualizado En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "cliente_id",
+          "espacio_id",
+          "fecha",
+          "bloque",
+          "qr",
+          "estado",
+          "valido_desde",
+          "valido_hasta",
+          "actualizado_en"
+        ],
+        "title": "AccesoOut"
+      },
+      "ChaosIn": {
+        "properties": {
+          "modo": {
+            "$ref": "#/components/schemas/ModoChaos"
+          },
+          "delay_ms": {
+            "type": "integer",
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Delay Ms",
+            "description": "Solo aplica al modo slow",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "modo"
+        ],
+        "title": "ChaosIn"
+      },
+      "ChaosOut": {
+        "properties": {
+          "modo": {
+            "$ref": "#/components/schemas/ModoChaos"
+          },
+          "delay_ms": {
+            "type": "integer",
+            "title": "Delay Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modo",
+          "delay_ms"
+        ],
+        "title": "ChaosOut"
+      },
+      "Error": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "examples": [
+              "SAGA_ANULADA"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje",
+            "examples": [
+              "La saga ya fue compensada; no se habilita el acceso"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "title": "Error"
+      },
+      "ErrorRespuesta": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorRespuesta"
+      },
+      "EstadoAcceso": {
+        "type": "string",
+        "enum": [
+          "HABILITADO",
+          "REVOCADO"
+        ],
+        "title": "EstadoAcceso"
+      },
+      "EstadoRevocacion": {
+        "type": "string",
+        "enum": [
+          "REVOCADO",
+          "ANULADO"
+        ],
+        "title": "EstadoRevocacion"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ModoChaos": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "slow",
+          "error",
+          "down"
+        ],
+        "title": "ModoChaos"
+      },
+      "RevocacionOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoRevocacion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "estado"
+        ],
+        "title": "RevocacionOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

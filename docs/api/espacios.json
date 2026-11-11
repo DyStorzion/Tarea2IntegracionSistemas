@@ -1,0 +1,525 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Servicio Espacios",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/espacios": {
+      "get": {
+        "summary": "Listar Espacios",
+        "description": "Lista los espacios y sus bloques libres en una fecha.\n\nExpuesto por el gateway como `GET /api/espacios?fecha=...`. No depende de Acceso,\npor lo que sirve para mostrar que el sistema sigue respondiendo cuando Acceso falla.",
+        "operationId": "listar_espacios_espacios_get",
+        "parameters": [
+          {
+            "name": "fecha",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Día a consultar (AAAA-MM-DD)",
+              "title": "Fecha"
+            },
+            "description": "Día a consultar (AAAA-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisponibilidadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reservas-espacio": {
+      "post": {
+        "summary": "Reservar",
+        "description": "Paso 1 de la Saga. Reserva el bloque y devuelve el precio a cobrar.\n\nIdempotente por `saga_id`. La regla \"un bloque, un cliente\" se garantiza con un índice\núnico (espacio_id, fecha, bloque) sobre las reservas en estado RESERVADA.",
+        "operationId": "reservar_reservas_espacio_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservaEspacioIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservaEspacioOut"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Repetición con el mismo saga_id: devuelve la reserva existente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservaEspacioOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ESPACIO_NO_EXISTE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FRANJA_OCUPADA (otra saga tiene el bloque) o SAGA_ANULADA",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reservas-espacio/{saga_id}/liberar": {
+      "post": {
+        "summary": "Liberar",
+        "description": "Compensación del paso 1. Siempre responde 200.\n\n- Reserva existente: queda LIBERADA (si ya lo estaba, no hace nada).\n- Sin reserva para ese saga_id: registra la saga como ANULADA.",
+        "operationId": "liberar_reservas_espacio__saga_id__liberar_post",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiberacionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reservas-espacio/{saga_id}": {
+      "get": {
+        "summary": "Obtener",
+        "description": "Consulta usada por el BFF.",
+        "operationId": "obtener_reservas_espacio__saga_id__get",
+        "parameters": [
+          {
+            "name": "saga_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Saga Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservaEspacioOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RESERVA_NO_EXISTE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DisponibilidadOut": {
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "espacios": {
+            "items": {
+              "$ref": "#/components/schemas/EspacioDisponible"
+            },
+            "type": "array",
+            "title": "Espacios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fecha",
+          "espacios"
+        ],
+        "title": "DisponibilidadOut"
+      },
+      "Error": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo",
+            "examples": [
+              "FRANJA_OCUPADA"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje",
+            "examples": [
+              "SALA-A ya está reservada el 2026-11-20 en el bloque 9"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "title": "Error"
+      },
+      "ErrorRespuesta": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorRespuesta"
+      },
+      "EspacioDisponible": {
+        "properties": {
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id",
+            "examples": [
+              "SALA-A"
+            ]
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre",
+            "examples": [
+              "Sala de reuniones A"
+            ]
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoEspacio"
+          },
+          "precio": {
+            "type": "integer",
+            "title": "Precio",
+            "description": "Precio de un bloque, en pesos",
+            "examples": [
+              15000
+            ]
+          },
+          "bloques_disponibles": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Bloques Disponibles",
+            "examples": [
+              [
+                8,
+                10,
+                11,
+                15
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "espacio_id",
+          "nombre",
+          "tipo",
+          "precio",
+          "bloques_disponibles"
+        ],
+        "title": "EspacioDisponible"
+      },
+      "EstadoLiberacion": {
+        "type": "string",
+        "enum": [
+          "LIBERADA",
+          "ANULADA"
+        ],
+        "title": "EstadoLiberacion"
+      },
+      "EstadoReservaEspacio": {
+        "type": "string",
+        "enum": [
+          "RESERVADA",
+          "LIBERADA"
+        ],
+        "title": "EstadoReservaEspacio"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LiberacionOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoLiberacion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "estado"
+        ],
+        "title": "LiberacionOut"
+      },
+      "ReservaEspacioIn": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "cliente_id": {
+            "type": "string",
+            "title": "Cliente Id"
+          },
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "maximum": 19.0,
+            "minimum": 8.0,
+            "title": "Bloque",
+            "description": "Hora de inicio; el bloque cubre [bloque:00, bloque+1:00)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "cliente_id",
+          "espacio_id",
+          "fecha",
+          "bloque"
+        ],
+        "title": "ReservaEspacioIn",
+        "examples": [
+          {
+            "bloque": 9,
+            "cliente_id": "cliente-demo",
+            "espacio_id": "SALA-A",
+            "fecha": "2026-11-20",
+            "saga_id": "3f6c2a9e-8d1b-4c1e-9a57-2b0f6f1d7c42"
+          }
+        ]
+      },
+      "ReservaEspacioOut": {
+        "properties": {
+          "saga_id": {
+            "type": "string",
+            "title": "Saga Id"
+          },
+          "cliente_id": {
+            "type": "string",
+            "title": "Cliente Id"
+          },
+          "espacio_id": {
+            "type": "string",
+            "title": "Espacio Id"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "title": "Fecha"
+          },
+          "bloque": {
+            "type": "integer",
+            "title": "Bloque"
+          },
+          "precio": {
+            "type": "integer",
+            "title": "Precio",
+            "description": "Precio que el orquestador debe cobrar, en pesos"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoReservaEspacio"
+          },
+          "actualizada_en": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Actualizada En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "saga_id",
+          "cliente_id",
+          "espacio_id",
+          "fecha",
+          "bloque",
+          "precio",
+          "estado",
+          "actualizada_en"
+        ],
+        "title": "ReservaEspacioOut"
+      },
+      "TipoEspacio": {
+        "type": "string",
+        "enum": [
+          "PUESTO",
+          "SALA"
+        ],
+        "title": "TipoEspacio"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
