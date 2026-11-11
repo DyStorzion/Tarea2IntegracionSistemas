@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Emite un JWT HS256 para el consumidor de Kong (P-01, solución provisoria).
+"""Emite un JWT HS256 para un consumidor de Kong (P-01, solución provisoria).
 
 Solo usa la librería estándar: un JWT son tres partes en base64url
 (header.payload.firma) y la firma es HMAC-SHA256 de las dos primeras.
 
 Uso:
-    python3 scripts/generar_token.py                  # imprime el token
-    python3 scripts/generar_token.py --sub ana --minutos 5
-    JWT_SECRET=otro python3 scripts/generar_token.py
+    python scripts/generar_token.py                   # token para cliente-demo
+    python scripts/generar_token.py cliente-demo-2    # token para el segundo consumidor
+    python scripts/generar_token.py --sub ana --minutos 5
+    JWT_SECRET=otro python scripts/generar_token.py   # firma con otro secreto (Kong responde 401)
 
 Kong identifica al consumidor por el claim `iss`, que debe coincidir con la
-`key` declarada en gateway/kong.yml.
+`key` declarada en gateway/kong.yml. El secreto se elige según el consumidor;
+SECRETOS debe coincidir con gateway/kong.yml y k6/lib/token.js.
 """
 import argparse
 import base64
@@ -20,7 +22,12 @@ import json
 import os
 import time
 
-SECRETO_DEV = "cowork-dev-secret-hs256-0123456789abcdef"
+# Secretos de DESARROLLO, iguales a los de gateway/kong.yml.
+SECRETOS = {
+    "cliente-demo": "cowork-dev-secret-hs256-0123456789abcdef",
+    "cliente-demo-2": "cowork-dev-secret-hs256-cliente2-fedcba98",
+}
+CONSUMIDOR_DEFAULT = "cliente-demo"
 
 
 def b64url(datos: bytes) -> str:
@@ -42,12 +49,21 @@ def generar_token(secreto: str, iss: str, sub: str, minutos: int) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Genera un JWT HS256 para Kong")
-    parser.add_argument("--iss", default="cliente-demo", help="key del consumidor en kong.yml")
-    parser.add_argument("--sub", default="cliente-demo", help="identificador del cliente")
+    parser.add_argument("consumidor", nargs="?", choices=sorted(SECRETOS),
+                        help=f"consumidor de kong.yml (por defecto {CONSUMIDOR_DEFAULT})")
+    parser.add_argument("--iss", help="key del consumidor en kong.yml (equivale al argumento consumidor)")
+    parser.add_argument("--sub", help="identificador del cliente (por defecto, el consumidor)")
     parser.add_argument("--minutos", type=int, default=60, help="vigencia del token")
     args = parser.parse_args()
-    secreto = os.environ.get("JWT_SECRET", SECRETO_DEV)
-    print(generar_token(secreto, args.iss, args.sub, args.minutos))
+
+    if args.iss and args.consumidor and args.iss != args.consumidor:
+        parser.error("indica el consumidor una sola vez (argumento o --iss)")
+    iss = args.iss or args.consumidor or CONSUMIDOR_DEFAULT
+
+    secreto = os.environ.get("JWT_SECRET") or SECRETOS.get(iss)
+    if secreto is None:
+        parser.error(f"consumidor desconocido {iss!r}; opciones: {', '.join(sorted(SECRETOS))}")
+    print(generar_token(secreto, iss, args.sub or iss, args.minutos))
 
 
 if __name__ == "__main__":

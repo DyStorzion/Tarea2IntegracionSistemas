@@ -3,9 +3,10 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
+  # Kong: plugin prometheus expuesto en el status listener (KONG_STATUS_LISTEN :8100)
   - job_name: gateway
     static_configs:
-      - targets: ["gateway:8100"]
+      - targets: ["kong:8100"]
 
   # Servicios FastAPI: prometheus_client montado en /metrics/
   - job_name: servicios

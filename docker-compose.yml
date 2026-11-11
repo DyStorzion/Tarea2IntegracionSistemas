@@ -1,7 +1,7 @@
 name: cowork
 
-# Solo Kong publica puerto (D-24). Todo lo demás vive en la red interna.
-# Grafana/Prometheus (D-27) se agregan en el commit de observabilidad.
+# Solo Kong publica puerto hacia afuera (D-24). Todo lo demás vive en la red interna.
+# Prometheus y Grafana (D-27) se publican solo en 127.0.0.1, como herramientas de evidencia.
 
 x-postgres: &postgres
   image: postgres:16-alpine
@@ -20,7 +20,7 @@ x-servicio: &servicio
 services:
   # ---------- Punto de entrada ----------
   kong:
-    image: kong:3.8
+    image: kong:3.9
     restart: unless-stopped
     networks: [interna]
     environment:
@@ -28,14 +28,25 @@ services:
       KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
       KONG_PROXY_LISTEN: 0.0.0.0:8000
       KONG_ADMIN_LISTEN: "off"          # sin Admin API: la config es solo el archivo
+      KONG_STATUS_LISTEN: 0.0.0.0:8100  # /metrics para Prometheus; solo red interna (sin ports)
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
+      # Caché DNS corta. Sin esto Kong sigue usando la IP vieja de un contenedor
+      # recreado y puede enrutar al contenedor equivocado.
+      KONG_DNS_VALID_TTL: "5"
+      KONG_DNS_STALE_TTL: "0"
     volumes:
       - ./gateway/kong.yml:/kong/declarative/kong.yml:ro
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       - reservas
+      - espacios
       - bff-web
 
   # ---------- Servicios propios (sin ports: red interna) ----------
@@ -43,6 +54,7 @@ services:
     <<: *servicio
     build: ./services/bff-web
     environment:
+      RESERVAS_URL: http://reservas:8000
       ESPACIOS_URL: http://espacios:8000
       PAGOS_URL: http://pagos:8000
       ACCESO_URL: http://acceso:8000
@@ -119,6 +131,43 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cowork}
       POSTGRES_DB: acceso
     volumes: [db-acceso-data:/var/lib/postgresql/data]
+
+  # ---------- Observabilidad (D-27): solo 127.0.0.1 ----------
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    networks: [interna]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    networks: [interna]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+  # ---------- Pruebas de carga ----------
+  # No arranca con "up". Uso: docker compose run --rm k6 run /scripts/smoke.js
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["carga"]
+    networks: [interna]
+    environment:
+      BASE_URL: http://kong:8000
+    volumes:
+      - ./k6:/scripts:ro
 
 networks:
   interna: {}

@@ -39,16 +39,21 @@ Prometheus (:9090) y Grafana (:3000) recogen métricas de Kong y de todos los se
 ## Levantar el sistema
 
 ```bash
-docker compose up --build
+docker compose up -d --build
+docker compose ps          # kong y los servicios deben quedar "healthy"
 ```
+
+No hace falta un `.env`: todo tiene valores por defecto. Para cambiarlos, copiar [.env.example](.env.example) a `.env`.
 
 Puertos disponibles en el host:
 
-| URL | Qué es |
-|---|---|
-| http://localhost:8000 | API Gateway (único punto de entrada al sistema) |
-| http://localhost:3000 | Grafana (solo localhost) |
-| http://localhost:9090 | Prometheus (solo localhost) |
+| URL | Qué es | Expuesto en |
+|---|---|---|
+| http://localhost:8000 | API Gateway (Kong), único punto de entrada al sistema. Se cambia con `GATEWAY_PORT` | todas las interfaces |
+| http://127.0.0.1:3000 | Grafana (acceso anónimo como administrador, sin login) | solo localhost |
+| http://127.0.0.1:9090 | Prometheus | solo localhost |
+
+Los microservicios, las bases de datos y el endpoint de métricas de Kong (`kong:8100/metrics`) no publican puertos: solo son accesibles dentro de la red interna de Docker.
 
 Para bajar todo y borrar las bases de datos:
 
@@ -58,33 +63,37 @@ docker compose down -v
 
 ## Autenticación
 
-Kong exige un JWT HS256 en el encabezado `Authorization`. Para generar uno de desarrollo:
+Kong exige un JWT HS256 en el encabezado `Authorization: Bearer <token>` (sin token o con firma inválida responde `401`). Para generar uno de desarrollo:
 
 ```bash
-python scripts/generar_token.py cliente-1
+python scripts/generar_token.py                  # consumidor cliente-demo (por defecto)
+python scripts/generar_token.py cliente-demo-2   # segundo consumidor
+python scripts/generar_token.py --minutos 5      # vigencia distinta (por defecto 60 min)
 ```
 
-Hay dos consumidores configurados, `cliente-1` y `cliente-2` (útil para mostrar que el rate limiting es por cliente). Los secretos de [gateway/kong.yml](gateway/kong.yml) son solo de desarrollo.
+Hay dos consumidores configurados, `cliente-demo` y `cliente-demo-2`, cada uno con su propio secreto. El rate limiting es por consumidor (10 peticiones por segundo; al excederlo Kong responde `429`), así que una ráfaga de uno no afecta al otro. Los secretos de [gateway/kong.yml](gateway/kong.yml) son solo de desarrollo.
 
 ## Rutas expuestas por el gateway
 
 | Método | Ruta en el gateway | Servicio interno |
 |---|---|---|
-| `POST` | `/api/reservas` | `reservas` → inicia la Saga |
-| `GET` | `/api/reservas/{sagaId}` | `reservas` → estado y saga log |
-| `GET` | `/api/espacios` | `espacios` → disponibilidad |
-| `GET` | `/bff/web/mis-reservas/{sagaId}` | `bff-web` → vista agregada |
+| `POST` | `/api/reservas` | `reservas` `POST /reservas` → inicia la Saga |
+| `GET` | `/api/reservas/{saga_id}` | `reservas` `GET /reservas/{saga_id}` → estado y saga log |
+| `GET` | `/api/espacios?fecha=YYYY-MM-DD` | `espacios` `GET /espacios` → disponibilidad |
+| `GET` | `/bff/web/mis-reservas/{saga_id}` | `bff-web` `GET /mis-reservas/{saga_id}` → vista agregada |
+
+Cualquier otra ruta responde `404` desde Kong. Cada respuesta trae un encabezado `X-Request-ID`, que Kong también envía al servicio para seguir la petición en los logs.
 
 Ejemplo (Git Bash):
 
 ```bash
-TOKEN=$(python scripts/generar_token.py cliente-1)
-curl -i http://localhost:8000/api/espacios -H "Authorization: Bearer $TOKEN"
+TOKEN=$(python scripts/generar_token.py)
+curl -i "http://localhost:8000/api/espacios?fecha=2026-11-20" -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Prueba de humo
 
-Verifica que el gateway rechaza peticiones sin token y deja pasar las autenticadas:
+Verifica que el gateway rechaza peticiones sin token o con firma inválida, deja pasar las autenticadas de ambos consumidores hasta el servicio correcto y responde `404` a rutas desconocidas. Requiere el sistema levantado; k6 no arranca con `up`, solo con `run`:
 
 ```bash
 docker compose run --rm k6 run /scripts/smoke.js

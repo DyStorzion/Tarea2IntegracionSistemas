@@ -2,17 +2,34 @@
 _format_version: "3.0"
 _transform: true
 
+# Rutas públicas con prefijo. strip_path: true quita el prefijo y Kong antepone
+# el path de la `url` del servicio:
+#   /api/reservas/abc        -> reservas  /reservas/abc
+#   /api/espacios?fecha=...  -> espacios  /espacios?fecha=...
+#   /bff/web/mis-reservas/x  -> bff-web   /mis-reservas/x
 services:
   - name: reservas
-    url: http://reservas:8000
+    url: http://reservas:8000/reservas
     connect_timeout: 2000
     read_timeout: 10000
     write_timeout: 10000
     retries: 0                # nunca reintentar un POST en el gateway (idempotencia: D-13)
     routes:
       - name: reservas-api
-        paths: [/reservas]
-        strip_path: false     # el cliente llama /reservas/... y el servicio ve /reservas/...
+        paths: [/api/reservas]
+        strip_path: true
+
+  - name: espacios
+    url: http://espacios:8000/espacios
+    connect_timeout: 2000
+    read_timeout: 5000
+    write_timeout: 5000
+    retries: 0
+    routes:
+      - name: espacios-api
+        paths: [/api/espacios]
+        methods: [GET]        # solo consulta de disponibilidad
+        strip_path: true
 
   - name: bff-web
     url: http://bff-web:8000
@@ -22,18 +39,25 @@ services:
     retries: 0
     routes:
       - name: bff-web-api
-        paths: [/mis-reservas]
-        strip_path: false
+        paths: [/bff/web]
+        strip_path: true
 
 # Cliente identificado por el claim `iss` del JWT (plugin jwt, key_claim_name: iss).
-# DEV: secreto en el repo. En producción iría en un vault; para el encargo basta
-# con que coincida con JWT_SECRET de scripts/generar_token.py.
+# DEV: secretos en el repo. En producción irían en un vault; para el encargo basta
+# con que coincidan con SECRETOS de scripts/generar_token.py y k6/lib/token.js.
+# Dos consumidores para mostrar que el rate limiting es por cliente.
 consumers:
   - username: cliente-demo
     jwt_secrets:
       - key: cliente-demo
         algorithm: HS256
         secret: cowork-dev-secret-hs256-0123456789abcdef
+
+  - username: cliente-demo-2
+    jwt_secrets:
+      - key: cliente-demo-2
+        algorithm: HS256
+        secret: cowork-dev-secret-hs256-cliente2-fedcba98
 
 plugins:
   # D-28: UUID por petición, enviado a los servicios y devuelto al cliente
@@ -59,3 +83,11 @@ plugins:
       policy: local
       fault_tolerant: true
       hide_client_headers: false   # el cliente ve X-RateLimit-Remaining-Second
+
+  # Métricas del gateway en el status listener (:8100/metrics): peticiones por
+  # código (incluye 401 y 429), por consumidor y latencias.
+  - name: prometheus
+    config:
+      per_consumer: true
+      status_code_metrics: true
+      latency_metrics: true

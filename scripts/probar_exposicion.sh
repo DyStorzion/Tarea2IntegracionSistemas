@@ -4,7 +4,7 @@
 set -uo pipefail
 
 GW="${GATEWAY_URL:-http://localhost:8000}"
-RUTA="${RUTA:-/reservas/health}"   # cualquier ruta enrutada sirve: aquí solo importa pasar la puerta
+RUTA="${RUTA:-/api/espacios}"   # cualquier ruta enrutada sirve: aquí solo importa pasar la puerta
 DIR="$(cd "$(dirname "$0")" && pwd)"
 TOKEN="$(python3 "$DIR/generar_token.py")"
 
