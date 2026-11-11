@@ -11,7 +11,9 @@ services:
   - name: reservas
     url: http://reservas:8000/reservas
     connect_timeout: 2000
-    read_timeout: 10000
+    # POST /reservas es síncrono: espera la saga completa, incluidas las compensaciones.
+    # Con una dependencia lenta el peor caso ronda los 18 s; 30 s deja margen.
+    read_timeout: 30000
     write_timeout: 10000
     retries: 0                # nunca reintentar un POST en el gateway (idempotencia: D-13)
     routes:
