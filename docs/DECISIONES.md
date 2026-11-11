@@ -32,9 +32,9 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-12 | Regla "una franja, un cliente" | Índice único en BD | Aceptada |
 | D-13 | Idempotencia | `sagaId` como clave de idempotencia | Aceptada |
 | D-14 | Circuit Breaker | Implementación propia | Aceptada |
-| D-15 | Bulkhead | `asyncio.Semaphore` con rechazo inmediato | Aceptada |
-| D-16 | Timeout | Timeout de `httpx` en toda llamada | Aceptada |
-| D-17 | Retry | `tenacity`, solo en pasos idempotentes (opcional) | Aceptada |
+| D-15 | Bulkhead | `asyncio.Semaphore` con rechazo inmediato | Aceptada (precisada por D-43) |
+| D-16 | Timeout | Timeout de `httpx` en toda llamada | Aceptada (precisada por D-40 y D-46) |
+| D-17 | Retry | `tenacity`, solo en pasos idempotentes (opcional) | Reemplazada por D-44 |
 | D-18 | Servicios externos | Simuladores con `/admin/chaos` | Aceptada |
 | D-19 | Observabilidad | Prometheus + Grafana + logs JSON con `sagaId` | Aceptada |
 | D-20 | Comparación "sin el patrón" | Variable `RESILIENCE_ENABLED` | Aceptada |
@@ -56,7 +56,18 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-36 | Formato de errores | `detail` con `codigo` y `mensaje` | Aceptada |
 | D-37 | Convenciones de la API | Nombres, tipos, encabezados, idempotencia | Aceptada |
 | D-38 | Rutas públicas | Con prefijo: `/api/...` y `/bff/web/...` | Aceptada |
-| D-39 | Compensación que llega antes que su paso | Registrar la saga como ANULADA | Pendiente de confirmar |
+| D-39 | Compensación que llega antes que su paso | Registrar la saga como ANULADA | Aceptada |
+| D-40 | Timeouts de los pasos | Por dependencia: Espacios 1 s, Pagos 2 s, Acceso 1,5 s | Aceptada |
+| D-41 | Apertura del Circuit Breaker | ≥50 % de fallos en las últimas 10 llamadas (mínimo 5) | Aceptada |
+| D-42 | Circuito abierto y semiabierto | 10 s abierto; 1 llamada de prueba | Aceptada |
+| D-43 | Recurso que aísla el Bulkhead | Pool HTTP compartido de 20 + semáforo de 5 para Acceso | Aceptada |
+| D-44 | Retry | En pasos y compensaciones, con reglas | Aceptada |
+| D-45 | Compensar el paso que falló | Solo si su resultado es incierto | Aceptada |
+| D-46 | Timeout de las compensaciones | 5 s, más largo que el de los pasos | Aceptada |
+| D-47 | Timeout de Kong hacia `reservas` | 30 s, sin plazo interno en la saga | Aceptada |
+| D-48 | Configuración de la resiliencia | Variables de entorno con valores por defecto | Aceptada |
+| D-49 | Alcance de CB y Bulkhead | Solo sobre Acceso | Aceptada |
+| D-50 | Activación de fallas | Script con `docker compose exec` + k6 dentro de la red | Aceptada |
 
 ---
 
@@ -219,7 +230,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 - **Justificación:** requisito del enunciado; base para que el CB cuente fallos por lentitud. Valores en [P-03](#decisiones-pendientes).
 
 ### D-17 · Retry con backoff: `tenacity`, solo en pasos idempotentes (opcional)
-- **Fecha:** 10-11-2026 · **Estado:** Aceptada
+- **Fecha:** 10-11-2026 · **Estado:** Reemplazada por D-44
 - **Decisión:** si hay tiempo, retry con backoff exponencial y pocos intentos, solo en operaciones idempotentes (D-13). No es obligatorio en la rúbrica.
 - **Alternativas descartadas:**
   - *Retry sobre la dependencia con el CB abierto:* el CB debe cortar; reintentar contra un circuito abierto anula su propósito.
@@ -304,9 +315,9 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 
   | Rol | Responsable | Componentes |
   |---|---|---|
-  | A · Exposición e infraestructura | _(por definir)_ | `docker-compose.yml`, Kong (JWT + rate limiting), emisión de tokens, BFF Web |
-  | B · Saga y dominio | _(por definir)_ | `reservas` (orquestador + saga log), compensaciones, idempotencia, servicio Espacios |
-  | C · Resiliencia y evidencia | _(por definir)_ | Simuladores Pagos y Acceso con `/admin/chaos`, CB, bulkhead, timeouts, Prometheus/Grafana, k6 |
+  | A · Exposición e infraestructura | Nicolás López | `docker-compose.yml`, Kong (JWT + rate limiting), emisión de tokens, BFF Web |
+  | B · Saga y dominio | Sofía López | `reservas` (orquestador + saga log), compensaciones, idempotencia, servicio Espacios |
+  | C · Resiliencia y evidencia | Benjamín Espinoza | Simuladores Pagos y Acceso con `/admin/chaos`, CB, bulkhead, timeouts, Prometheus/Grafana, k6 |
 
   Informe y video: entre todos, cada uno su parte.
 
@@ -502,7 +513,7 @@ Cómo cambiar un contrato: editar `app/contrato.py` y/o las rutas del servicio, 
 - **Justificación:** separa la API de dominio (`/api`) de la API del BFF (`/bff/web`) y evita capturas accidentales.
 
 ### D-39 · Una compensación que llega antes que su paso anula la saga en ese servicio
-- **Fecha:** 11-11-2026 · **Estado:** Pendiente de confirmar (incluida en los contratos)
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada (confirmada el 11-11-2026; ver su relación con D-44 y D-45)
 - **Problema:** si un paso hace timeout, el orquestador no sabe si se ejecutó; por eso compensa igual. Pero la petición original puede llegar al servicio **después** de la compensación (p. ej., cobrar después de haber reembolsado).
 - **Decisión:** si una compensación llega para un `saga_id` sin registro, el servicio guarda la saga como `ANULADA` y responde `200` (`ANULADA`/`ANULADO`). Si después llega el paso con ese `saga_id`, responde `409 SAGA_ANULADA` y no ejecuta nada.
 - **Alternativas descartadas:**
@@ -512,14 +523,152 @@ Cómo cambiar un contrato: editar `app/contrato.py` y/o las rutas del servicio, 
 
 ---
 
+## 10. Parámetros de resiliencia y activación de fallas
+
+Valores acordados (todos configurables por variables de entorno, D-48):
+
+| Parámetro | Valor |
+|---|---|
+| Timeout de conexión (todas las llamadas) | 0,5 s |
+| Timeout de respuesta de los pasos: Espacios / Pagos / Acceso | 1 s / 2 s / 1,5 s |
+| Timeout de respuesta de las compensaciones | 5 s (D-46) |
+| Circuit Breaker (solo Acceso) | Abre con ≥50 % de fallos en las últimas 10 llamadas, con mínimo 5; 10 s abierto; 1 llamada de prueba |
+| Bulkhead (solo Acceso) | 5 llamadas simultáneas, dentro de un pool HTTP compartido de 20 conexiones |
+| Retry de pasos | 2 intentos en total, solo ante errores rápidos (conexión rechazada, 5xx) |
+| Retry de compensaciones | 3 intentos, incluidos timeouts; esperas de 0,2 y 0,4 s con variación aleatoria |
+| Timeout de Kong hacia `reservas` | 30 s |
+| Retardo de Acceso para la demo de lentitud | 3 s (mayor que 1,5 s del paso, menor que 5 s de la compensación) |
+
+Duración de la saga en cada escenario con estos valores:
+
+| Escenario | Qué ocurre | Duración aproximada | Estado final |
+|---|---|---|---|
+| 1. Camino feliz | 3 pasos | 0,1 s | `CONFIRMADA` |
+| 2. Acceso en modo `error` | 500 → 1 reintento → 500 → no se revoca (error explícito, D-45) → reembolso → liberación | 0,3 s | `COMPENSADA` |
+| 3a. Acceso lento (3 s) | Timeout de 1,5 s → incierto → revocar (responde a los 3 s) → reembolso → liberación | 4,6 s | `COMPENSADA` |
+| 3a. Tras ~5 sagas fallidas | El circuito abre; rechazo previo (D-10) | milisegundos | `RECHAZADA` (503) |
+| 3a. Con más concurrencia que cupos | El Bulkhead rechaza el exceso en el paso 3 | milisegundos | `COMPENSADA` (503) |
+| 3b. Acceso detenido | Conexión rechazada → 1 reintento → no se revoca → reembolso → liberación | 0,3 s | `COMPENSADA` |
+| Peor caso con **una** dependencia lenta (> 5 s) | Paso con timeout + compensación con 3 timeouts de 5 s | ~18 s | `COMPENSACION_PENDIENTE` |
+
+Límite aceptado: si dos o más dependencias están lentas a la vez, la saga puede pasar de 30 s. Kong responde 504, pero la saga termina igual en `reservas` y su resultado se consulta con `GET /api/reservas/{saga_id}`. Ningún escenario exigido cae en este caso.
+
+### D-40 · Timeouts de los pasos por dependencia
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Decisión:** timeout de conexión 0,5 s para todas las llamadas; timeout de respuesta de los pasos: Espacios 1 s, Pagos 2 s, Acceso 1,5 s.
+- **Alternativas descartadas:**
+  - *Un mismo timeout para todas (p. ej. 2 s):* simple, pero no refleja el riesgo de cada dependencia.
+  - *Valores más altos (2 / 3 / 2 s):* con retry y compensaciones, el peor caso se acercaba a los 30 s de Kong.
+- **Justificación:** Pagos tiene el más alto porque un timeout al cobrar deja la duda de si se cobró; Acceso, la dependencia frágil, falla rápido.
+
+### D-41 · El Circuit Breaker abre por tasa de fallos en ventana deslizante
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Decisión:** se guardan los resultados de las últimas 10 llamadas a Acceso; el circuito abre si fallan ≥50 %, siempre que haya al menos 5 llamadas registradas. Cuentan como fallo: timeouts, errores de conexión y respuestas 5xx. No cuentan: respuestas 4xx de negocio (p. ej. `409 SAGA_ANULADA`) ni los rechazos del Bulkhead. Cada intento de un retry cuenta por separado.
+- **Alternativas descartadas:**
+  - *N fallos seguidos:* lo más simple, pero si Acceso alterna éxitos y fallos el contador se reinicia y el circuito nunca abre.
+  - *Fallos en una ventana de tiempo:* con poco tráfico se comporta de forma irregular y es más difícil de explicar.
+- **Justificación:** el enunciado describe Acceso como **inestable**; una tasa de fallos detecta ese comportamiento, un contador de fallos seguidos no.
+
+### D-42 · Circuito abierto 10 s y semiabierto con una llamada de prueba
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Decisión:** el circuito queda abierto 10 s. Luego pasa a semiabierto y deja pasar **una** llamada: si responde bien se cierra, si falla vuelve a abrirse. Mientras esa llamada está en curso, las demás se rechazan. En semiabierto, el rechazo previo (D-10) deja iniciar la saga.
+- **Alternativas descartadas:**
+  - *30 a 60 s abierto:* realista en producción, pero en un video de 8 minutos no alcanza a verse el ciclo completo.
+  - *Varias llamadas de prueba:* más robusto, pero más código y más difícil de mostrar.
+- **Justificación:** el ciclo completo (cerrado → abierto → semiabierto → cerrado) se ve con claridad en la demo.
+
+### D-43 · El Bulkhead aísla un pool HTTP compartido
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Precisa:** D-15
+- **Decisión:** `reservas` usa un único cliente HTTP con un pool de **20 conexiones** para todas las dependencias. Las llamadas a Acceso piden antes un cupo de un semáforo de **5**; si no hay cupo se rechazan al instante (`503 ACCESO_SATURADO`). Con `RESILIENCE_ENABLED=false` se quita el semáforo y el pool sigue compartido.
+- **Qué protege:** una dependencia lenta acumula llamadas abiertas (concurrencia = llegadas × latencia). Sin límite, las llamadas lentas a Acceso ocupan todas las conexiones del pool y las de Espacios y Pagos quedan esperando: falla en cascada. Con el semáforo, Acceso ocupa como máximo 5 de 20 conexiones.
+- **Diferencia con el Circuit Breaker:** el Circuit Breaker reacciona a fallos ya observados; el Bulkhead limita la concurrencia desde la primera llamada y también protege de llamadas lentas que **sí** responden antes del timeout, que el Circuit Breaker cuenta como éxitos.
+- **Alternativas descartadas:**
+  - *Un pool separado por dependencia:* es un Bulkhead válido, pero para tener una línea base "sin patrón" habría que volver a un pool compartido; además el exceso espera una conexión en vez de rechazarse al instante.
+  - *Limitar la concurrencia de todo `POST /reservas`:* no aísla nada.
+- **Justificación:** el experimento con y sin el patrón sale natural (latencia de los pasos 1 y 2, rechazos y cupos en uso), y eso es lo que mide ABET 6.
+
+### D-44 · Retry en pasos y compensaciones, con reglas
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Reemplaza:** D-17
+- **Decisión:**
+  - **Orden de las capas:** `retry → circuit breaker → bulkhead → timeout → llamada`. Cada intento cuenta en la ventana del Circuit Breaker (D-41).
+  - **Nunca se reintenta** si el circuito está abierto, si el Bulkhead rechazó la llamada o si la respuesta fue 4xx.
+  - **Pasos:** 2 intentos en total, solo ante errores rápidos (conexión rechazada, 5xx). **No se reintentan los timeouts**: la lentitud persistente la maneja el Circuit Breaker.
+  - **Compensaciones:** 3 intentos, incluidos timeouts, con esperas de 0,2 y 0,4 s más una variación aleatoria. **No pasan por el Circuit Breaker ni por el Bulkhead**: tienen que intentarse aunque el circuito esté abierto. Si una compensación falla en los 3 intentos, las demás se ejecutan igual y la saga queda en `COMPENSACION_PENDIENTE`.
+- **Alternativas descartadas:**
+  - *Sin retry:* una falla pasajera en una compensación deja la saga a medio compensar.
+  - *Retry solo en compensaciones:* deja sin tolerancia a fallas pasajeras a los pasos.
+  - *Retry en todo, sin reglas:* antes de que abra el circuito multiplica la carga sobre la dependencia que ya está mal ("tormenta de reintentos"); con lentitud, cada reintento paga el timeout completo y ocupa un cupo del Bulkhead.
+- **Justificación:** el retry cubre fallas pasajeras y el Circuit Breaker corta las persistentes; las reglas evitan que el retry trabaje en contra del Circuit Breaker. Todo es seguro porque pasos y compensaciones son idempotentes (D-13).
+
+### D-45 · El paso que falló se compensa solo si su resultado es incierto
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada
+- **Decisión:** los pasos anteriores, que se confirmaron, se compensan siempre. El paso que falló se compensa solo si no se sabe si se aplicó:
+
+  | Resultado del paso que falló | ¿Se aplicó? | ¿Se compensa? |
+  |---|---|---|
+  | Respuesta de error explícita (4xx, 5xx) | No | No |
+  | Conexión rechazada (`ConnectError`), circuito abierto, Bulkhead sin cupo | No (la petición no salió) | No |
+  | Timeout de respuesta o conexión cortada después de enviar | No se sabe | **Sí** |
+
+- **Supuesto:** un 5xx significa que el servicio no aplicó el paso. Los simuladores lo garantizan, porque la inyección de fallas responde antes de ejecutar nada.
+- **Alternativas descartadas:**
+  - *Compensar siempre el paso que falló:* en el escenario 2 (Acceso en modo `error`) la revocación también fallaría y la saga quedaría en `COMPENSACION_PENDIENTE` en vez de `COMPENSADA`.
+  - *No compensarlo nunca:* tras un timeout, la puerta podría quedar habilitada para una reserva reembolsada.
+- **Relación con D-39:** el caso incierto es justamente el que cubre D-39. Si la revocación llega a Acceso antes que la habilitación demorada, la saga queda `ANULADA` y la habilitación tardía se rechaza con `409 SAGA_ANULADA`. Si llega después, Acceso la revoca. En ambos órdenes el estado final es consistente.
+
+### D-46 · Las compensaciones tienen un timeout más largo que los pasos
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Problema:** con el mismo timeout que los pasos (1,5 s) y Acceso lento (3 s), los 3 intentos de revocar hacen timeout. Acceso igual procesa las revocaciones un poco después y el estado real queda consistente, pero `reservas` no lo sabe y marca la saga como `COMPENSACION_PENDIENTE`.
+- **Decisión:** las compensaciones usan un timeout de respuesta de 5 s.
+- **Principio:** los pasos fallan rápido, porque protegen la latencia del cliente y el Circuit Breaker se encarga de la lentitud persistente. Las compensaciones son pacientes, porque tienen que completarse para que el estado sea consistente.
+- **Alternativas descartadas:**
+  - *Mismo timeout que los pasos:* deja `COMPENSACION_PENDIENTE` en el escenario de lentitud, aunque el estado real sea consistente.
+  - *Reintentador en segundo plano para compensaciones pendientes:* más robusto, pero es otro componente que implementar.
+
+### D-47 · Timeout de Kong hacia `reservas` de 30 s, sin plazo interno
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Decisión:** el `read_timeout` de Kong hacia `reservas` sube de 10 s a 30 s (aplicado en `gateway/kong.yml`). La saga no tiene un plazo máximo propio.
+- **Alternativas descartadas:**
+  - *Plazo interno de 8 s, con Kong en 10 s y respuesta `202 COMPENSANDO` si se cumple:* obliga a afinar todos los valores para que calcen dentro del plazo; la demo dependería de los parámetros más que de los patrones.
+- **Justificación:** con una dependencia lenta, el peor caso es ~18 s y queda margen. Ver el límite aceptado en la tabla de escenarios de esta sección.
+
+### D-48 · Parámetros de resiliencia en variables de entorno
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra parte de:** P-03
+- **Decisión:** cada parámetro de la tabla de esta sección se lee de una variable de entorno de `reservas`, con el valor acordado por defecto, y se declara en `docker-compose.yml`. Igual que `RESILIENCE_ENABLED`.
+- **Alternativas descartadas:**
+  - *Constantes en el código:* cambiar un valor entre experimentos obliga a reconstruir la imagen.
+- **Justificación:** permite repetir un experimento con otro valor sin tocar el código.
+
+### D-49 · Circuit Breaker y Bulkhead solo sobre Acceso
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada
+- **Decisión:** Circuit Breaker y Bulkhead protegen solo las llamadas a Acceso. Espacios y Pagos tienen timeout y retry.
+- **Alternativas descartadas:**
+  - *Circuit Breaker también sobre Pagos:* reutilizaría la misma clase; queda como extra si sobra tiempo.
+- **Justificación:** el enunciado exige los patrones sobre la dependencia frágil, y la evidencia se concentra en Acceso.
+
+### D-50 · Activación de fallas: script con `docker compose exec` y k6 dentro de la red
+- **Fecha:** 11-11-2026 · **Estado:** Aceptada · **Cierra:** P-07
+- **Decisión:**
+  - **Manual:** `python scripts/chaos.py <pagos|acceso> <ok|slow|error|down> [delay_ms]` ejecuta `docker compose exec` y llama a `/admin/chaos` dentro del contenedor.
+  - **Automatizado:** los scripts de k6 corren en la red interna y llaman directo a `http://acceso:8000/admin/chaos`. Un experimento cambia el modo por etapas (p. ej. normal → lento → caído → normal) en el mismo script, y queda reproducible.
+  - **Caída real:** `docker compose stop acceso`.
+- **Alternativas descartadas:**
+  - *Ruta `/admin/...` en Kong con ACL:* expone la inyección de fallas en el gateway público y la somete al rate limiting.
+  - *Contenedor de herramientas en la red interna:* otro servicio más que mantener.
+  - *Publicar Pagos y Acceso en `127.0.0.1`:* expone el servicio completo saltándose Kong; se puede leer como incumplir "solo el gateway se expone".
+  - *Variables de entorno y reinicio:* tarda segundos y no permite cambiar el modo durante una prueba de carga.
+- **Justificación:** no expone nada, no agrega infraestructura y permite experimentos automatizados con una línea de tiempo clara.
+
+---
+
 ## Decisiones pendientes
 
 | ID | Pregunta | Opciones en evaluación | Responsable |
 |---|---|---|---|
 | P-01 | ¿Quién emite el JWT? | Endpoint `/login` mínimo · tokens pregenerados con un script. **Provisorio:** `scripts/generar_token.py` | A |
 | P-02 | Valores de rate limiting | p. ej. 10 req/s por consumidor | A |
-| P-03 | Parámetros de resiliencia | Timeout a Acceso (~2 s), umbral del CB (p. ej. 5 fallos / 50 %), espera antes de semiabierto (~10 s), cupos del bulkhead (~5) | C |
+| ~~P-03~~ | ~~Parámetros de resiliencia~~ | **Resuelta** por D-40 a D-49 | C |
 | P-04 | Acceso a datos | SQLAlchemy (async) · `asyncpg` directo | B |
-| ~~P-05~~ | ~~Contratos de API~~ | **Resuelta** por D-30 a D-38 (D-39 por confirmar) | Todos |
+| ~~P-05~~ | ~~Contratos de API~~ | **Resuelta** por D-30 a D-39 | Todos |
 | P-06 | Nombres en el reparto | Asignar A / B / C | Todos |
-| P-07 | ¿Cómo se invoca `/admin/chaos` si Acceso y Pagos no publican puerto? | Ruta `/admin/...` en Kong restringida a un consumidor `admin` (plugin ACL) · `docker compose exec` · servicio de utilidades en la red interna | C |
+| ~~P-07~~ | ~~¿Cómo se invoca `/admin/chaos`?~~ | **Resuelta** por D-50 | C |
