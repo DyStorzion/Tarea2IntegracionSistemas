@@ -49,3 +49,13 @@ plugins:
     config:
       key_claim_name: iss
       claims_to_verify: [exp]
+
+  # D-05: límite por consumidor (identificado por el JWT). Se ejecuta después
+  # de jwt, por eso ya conoce al consumidor. Excedido -> HTTP 429.
+  - name: rate-limiting
+    config:
+      second: 10
+      limit_by: consumer
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false   # el cliente ve X-RateLimit-Remaining-Second
