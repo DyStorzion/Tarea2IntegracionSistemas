@@ -9,6 +9,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# Pruebas de contrato: se ejecutan contra el servicio en marcha
+#   docker compose exec acceso pytest -q -p no:cacheprovider tests
+COPY tests ./tests
 
 EXPOSE 8000
 
