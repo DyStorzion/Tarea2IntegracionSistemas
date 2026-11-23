@@ -743,7 +743,7 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   | `resultado` | `OK`, `ERROR`, `TIMEOUT` o `RECHAZADO` (el `ResultadoPaso` del contrato) |
   | `codigo_http` | Código que respondió la dependencia; `None` si no respondió |
   | `cuerpo` | JSON de la respuesta (p. ej. `precio` de Espacios, `qr` de Acceso); `None` si no respondió |
-  | `detalle` | Código fijo del motivo, para que el orquestador decida sin comparar textos: el `codigo` del error si la dependencia respondió con error (p. ej. `FRANJA_OCUPADA`), o uno de `CIRCUITO_ABIERTO`, `BULKHEAD_LLENO`, `CONEXION_RECHAZADA`, `CONEXION_CORTADA`, `TIMEOUT_CONEXION`, `TIMEOUT_RESPUESTA`. `None` si salió bien |
+  | `detalle` | Código fijo del motivo, para que el orquestador decida sin comparar textos: el `codigo` del error si la dependencia respondió con error (p. ej. `FRANJA_OCUPADA`; `HTTP_<código>` si la respuesta no trae el formato común, como un 500 no controlado), o uno de `CIRCUITO_ABIERTO`, `BULKHEAD_LLENO`, `POOL_AGOTADO`, `CONEXION_RECHAZADA`, `CONEXION_CORTADA`, `TIMEOUT_CONEXION`, `TIMEOUT_RESPUESTA`. `None` si salió bien |
   | `incierto` | `True` si no se sabe si la dependencia aplicó la operación (D-45) |
   | `intentos` | Cuántas veces se intentó la llamada |
   | `inicio`, `duracion_ms` | Momento del primer intento y duración total, retries incluidos |
@@ -754,8 +754,9 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   |---|---|---|---|
   | Respuesta 2xx | `OK` | `None` | No |
   | Respuesta 4xx o 5xx | `ERROR` (con `codigo_http` y `cuerpo`) | `codigo` del error | No |
-  | Conexión rechazada | `ERROR` | `CONEXION_RECHAZADA` | No: la petición no salió |
-  | Timeout al conectar | `TIMEOUT` | `TIMEOUT_CONEXION` | No: la petición no salió |
+  | Conexión rechazada (nadie escucha en ese puerto) | `ERROR` | `CONEXION_RECHAZADA` | No: la petición no salió |
+  | Timeout al conectar (también un contenedor detenido: su nombre no se resuelve a tiempo) | `TIMEOUT` | `TIMEOUT_CONEXION` | No: la petición no salió |
+  | Sin conexión libre en el pool compartido dentro del timeout | `TIMEOUT` | `POOL_AGOTADO` | No: la petición no salió |
   | Timeout de respuesta | `TIMEOUT` | `TIMEOUT_RESPUESTA` | **Sí** |
   | Conexión cortada después de enviar | `ERROR` | `CONEXION_CORTADA` | **Sí** |
   | Circuito abierto | `RECHAZADO` | `CIRCUITO_ABIERTO` | No: no se llamó |
