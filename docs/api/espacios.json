@@ -67,7 +67,7 @@
     "/reservas-espacio": {
       "post": {
         "summary": "Reservar",
-        "description": "Paso 1 de la Saga. Reserva el bloque y devuelve el precio a cobrar.\n\nIdempotente por `saga_id`. La regla \"un bloque, un cliente\" se garantiza con un índice\núnico (espacio_id, fecha, bloque) sobre las reservas en estado RESERVADA.",
+        "description": "Paso 1 de la Saga. Reserva el bloque y devuelve el precio a cobrar.\n\nIdempotente por `saga_id`: una repetición devuelve la reserva original (200), aunque\ntraiga otros datos. La regla \"un bloque, un cliente\" se garantiza con un índice\núnico (espacio_id, fecha, bloque) sobre las reservas en estado RESERVADA.",
         "operationId": "reservar_reservas_espacio_post",
         "requestBody": {
           "content": {
@@ -121,11 +121,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "FRANJA_PASADA (el bloque ya empezó, hora local del cowork)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorRespuesta"
                 }
               }
             }
