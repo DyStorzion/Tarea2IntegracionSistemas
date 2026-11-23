@@ -69,6 +69,8 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-49 | Alcance de CB y Bulkhead | Solo sobre Acceso | Aceptada |
 | D-50 | Activación de fallas | Script con `docker compose exec` + k6 dentro de la red | Aceptada |
 | D-51 | Acceso a datos | SQLAlchemy ORM asíncrono sobre `asyncpg`, como Pagos y Acceso | Aceptada |
+| D-52 | Modelo de datos de Espacios | Catálogo en BD, PK `saga_id`, ANULADA en la misma tabla, copia del precio | Aceptada |
+| D-53 | Reglas del paso 1 | Repetición → 200; índice único; `422 FRANJA_PASADA` en hora local | Aceptada |
 
 ---
 
@@ -265,6 +267,37 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - *SQLAlchemy Core sin ORM:* más cerca del SQL ejecutado, pero con un estilo distinto al del resto del repositorio.
   - *`asyncpg` directo con SQL a mano:* sin abstracción, pero obliga a manejar pool, transacciones y conversión de filas a mano, y rompe la consistencia con Pagos y Acceso.
 - **Justificación:** los cuatro servicios con base de datos comparten el mismo patrón, que cualquiera del equipo puede leer y defender. La regla de la franja (D-12) y la idempotencia (D-13) siguen garantizadas en la base: índice único parcial declarado en el modelo e `INSERT ... ON CONFLICT`.
+
+### D-52 · Modelo de datos de Espacios
+- **Fecha:** 23-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+  - **Catálogo en la base:** tabla `espacios` (id, nombre, tipo, precio) sembrada al arrancar con `INSERT ... ON CONFLICT DO NOTHING`. Las reservas la referencian con clave foránea.
+  - **Clave primaria `saga_id`** en `reservas_espacio`, como Pagos y Acceso: la base impide que una saga reserve dos veces.
+  - **Saga anulada (D-39) en la misma tabla:** fila con estado `ANULADA` y las columnas de reserva nulas.
+  - **Copia del precio en la reserva:** se guarda el precio vigente al reservar.
+- **Alternativas descartadas:**
+  - *Catálogo como constante en el código:* sin clave foránea, y cambiar un precio obliga a reconstruir la imagen.
+  - *Catálogo cargado desde un archivo semilla aparte:* un archivo más que mantener, sin beneficio para el alcance.
+  - *Id propio + `saga_id` único:* mismas garantías con una columna más.
+  - *Tabla aparte `sagas_anuladas`:* evita columnas nulas, pero el paso 1 tendría que consultar dos tablas.
+  - *Leer siempre el precio del catálogo:* un cambio de precio alteraría lo que muestran las reservas ya cobradas.
+- **Justificación:** el mismo patrón que Pagos y Acceso, y lo cobrado queda fijo aunque cambie el catálogo.
+
+### D-53 · Reglas del paso 1 (reservar espacio)
+- **Fecha:** 23-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+  - **Repetición con el mismo `saga_id`:** responde `200` con la reserva original, aunque traiga otros datos (como Pagos y Acceso).
+  - **Bloque ocupado:** solo el índice único lo detecta. El `INSERT` usa `ON CONFLICT` sobre `saga_id`; si otra saga tiene el bloque, Postgres rechaza la sentencia por el índice `un_cliente_por_bloque` y se responde `409 FRANJA_OCUPADA`.
+  - **Bloques pasados:** se rechaza con `422 FRANJA_PASADA` un bloque que ya empezó en hora local del cowork (`America/Santiago`, configurable con `ESPACIOS_ZONA_HORARIA`). Una repetición de una reserva ya hecha no se rechaza por esto.
+  - **Observabilidad:** contador `espacios_operaciones_total{operacion,resultado}` y una línea de log por resultado.
+- **Alternativas descartadas:**
+  - *`409` si la repetición trae datos distintos:* en este sistema el `saga_id` lo genera `reservas` y siempre reenvía los mismos datos; agregaría un caso sin uso real.
+  - *Consulta previa y luego `INSERT`:* dos caminos para el mismo error; el índice igual es necesario por las carreras.
+  - *Aceptar fechas pasadas:* permitiría reservar (y cobrar) una hora que ya pasó.
+  - *Rechazar solo días anteriores:* hoy se podría reservar un bloque que ya terminó.
+  - *UTC:* el bloque 9 quedaría desfasado 3 horas respecto al cowork.
+  - *`409 FRANJA_PASADA`:* `409` indica conflicto con el estado; un bloque pasado es un dato inválido.
+- **Evidencia:** con 20 sagas simultáneas por el mismo bloque, exactamente una recibe `201` y las demás `409 FRANJA_OCUPADA`.
 
 ---
 
@@ -465,6 +498,7 @@ Cómo cambiar un contrato: editar `app/contrato.py` y/o las rutas del servicio, 
   | Repetición con la misma `Idempotency-Key` | `200` | el de la saga original | — |
   | El espacio no existe (paso 1) | `404` | `RECHAZADA` | `ESPACIO_NO_EXISTE` |
   | La franja estaba ocupada (paso 1) | `409` | `RECHAZADA` | `FRANJA_OCUPADA` |
+  | El bloque ya empezó (paso 1, D-53) | `422` | `RECHAZADA` | `FRANJA_PASADA` |
   | El pago fue rechazado (paso 2) | `402` | `COMPENSADA` | `PAGO_RECHAZADO` |
   | Una dependencia falló o no respondió a tiempo | `502` | `COMPENSADA` | `ESPACIOS_FALLO` / `PAGOS_FALLO` / `ACCESO_FALLO` |
   | Además falló una compensación | `502` | `COMPENSACION_PENDIENTE` | `COMPENSACION_FALLIDA` |
