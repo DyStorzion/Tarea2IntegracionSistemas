@@ -68,6 +68,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-48 | Configuración de la resiliencia | Variables de entorno con valores por defecto | Aceptada |
 | D-49 | Alcance de CB y Bulkhead | Solo sobre Acceso | Aceptada |
 | D-50 | Activación de fallas | Script con `docker compose exec` + k6 dentro de la red | Aceptada |
+| D-51 | Acceso a datos | SQLAlchemy ORM asíncrono sobre `asyncpg`, como Pagos y Acceso | Aceptada |
 
 ---
 
@@ -256,6 +257,14 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - *Un servidor Postgres con varias bases:* válido, pero el aislamiento es menos evidente y una caída del servidor afecta a todos.
   - *SQLite por servicio:* concurrencia de escritura limitada; peor para demostrar la regla de la franja bajo carga.
 - **Justificación:** "cada servicio con su propia base" queda explícito en el diagrama y en el Compose, con poco costo adicional.
+
+### D-51 · Acceso a datos: SQLAlchemy ORM asíncrono sobre `asyncpg`
+- **Fecha:** 20-11-2026 · **Estado:** Aceptada · **Cierra:** P-04
+- **Decisión:** Espacios y `reservas` usan SQLAlchemy 2 en modo asíncrono con el ORM (`db.py` + `modelos.py`), igual que Pagos y Acceso. Las tablas se crean al arrancar con `create_all`, sin migraciones.
+- **Alternativas descartadas:**
+  - *SQLAlchemy Core sin ORM:* más cerca del SQL ejecutado, pero con un estilo distinto al del resto del repositorio.
+  - *`asyncpg` directo con SQL a mano:* sin abstracción, pero obliga a manejar pool, transacciones y conversión de filas a mano, y rompe la consistencia con Pagos y Acceso.
+- **Justificación:** los cuatro servicios con base de datos comparten el mismo patrón, que cualquiera del equipo puede leer y defender. La regla de la franja (D-12) y la idempotencia (D-13) siguen garantizadas en la base: índice único parcial declarado en el modelo e `INSERT ... ON CONFLICT`.
 
 ---
 
@@ -668,7 +677,7 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
 | P-01 | ¿Quién emite el JWT? | Endpoint `/login` mínimo · tokens pregenerados con un script. **Provisorio:** `scripts/generar_token.py` | A |
 | P-02 | Valores de rate limiting | p. ej. 10 req/s por consumidor | A |
 | ~~P-03~~ | ~~Parámetros de resiliencia~~ | **Resuelta** por D-40 a D-49 | C |
-| P-04 | Acceso a datos | SQLAlchemy (async) · `asyncpg` directo | B |
+| ~~P-04~~ | ~~Acceso a datos~~ | **Resuelta** por D-51 | B |
 | ~~P-05~~ | ~~Contratos de API~~ | **Resuelta** por D-30 a D-39 | Todos |
 | P-06 | Nombres en el reparto | Asignar A / B / C | Todos |
 | ~~P-07~~ | ~~¿Cómo se invoca `/admin/chaos`?~~ | **Resuelta** por D-50 | C |
