@@ -4,12 +4,14 @@ Las rutas definen el contrato (ver app/contrato.py). Responden 501 hasta impleme
 """
 
 import logging
-import os
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI, HTTPException, Query
 from prometheus_client import make_asgi_app
+from sqlalchemy.dialects.postgresql import insert
 
+from app.config import SERVICE_NAME
 from app.contrato import (
     CodigoError,
     DisponibilidadOut,
@@ -18,14 +20,25 @@ from app.contrato import (
     ReservaEspacioIn,
     ReservaEspacioOut,
 )
-
-SERVICE_NAME = "espacios"
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+from app.db import Sesion, crear_tablas, engine
+from app.modelos import CATALOGO, Espacio
 
 logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {SERVICE_NAME} %(levelname)s %(message)s")
 log = logging.getLogger(SERVICE_NAME)
 
-app = FastAPI(title="Servicio Espacios", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await crear_tablas()
+    async with Sesion() as sesion:
+        # ON CONFLICT DO NOTHING: reiniciar el servicio no duplica ni pisa el catálogo.
+        await sesion.execute(insert(Espacio).values(CATALOGO).on_conflict_do_nothing())
+        await sesion.commit()
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(title="Servicio Espacios", version="0.2.0", lifespan=lifespan)
 app.mount("/metrics", make_asgi_app())
 
 
