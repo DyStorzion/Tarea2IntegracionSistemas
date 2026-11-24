@@ -4,7 +4,7 @@ Encargo integrador, Unidad 3 de Integración de Sistemas (Forma O).
 
 Sistema de microservicios que reserva un puesto o sala de cowork coordinando **Espacios**, **Pagos** (pasarela externa) y **Acceso** (controlador externo de puerta con QR) mediante una **Saga orquestada**, expuesto por un **API Gateway** y un **BFF**, y protegido con **timeout, Circuit Breaker y Bulkhead**.
 
-> **Estado:** en desarrollo. Los simuladores de **Pagos** y **Acceso** están implementados; los demás endpoints de negocio responden `501 NO_IMPLEMENTADO`.
+> **Estado:** en desarrollo. Los simuladores de **Pagos** y **Acceso** y el **BFF Web** están implementados; los endpoints de negocio que aún no lo estén responden `501 NO_IMPLEMENTADO` (en ese caso el BFF contesta `502`, ver [BFF Web](#bff-web)).
 
 ## Arquitectura
 
@@ -18,6 +18,7 @@ Cliente ──JWT──► Kong (gateway, :8000) ──┬──► bff-web ─�
                                          reservas ── db-reservas (saga log)
 
 Prometheus (:9090) y Grafana (:3000) recogen métricas de Kong y de todos los servicios.
+Decisiones de diseño y alternativas descartadas: docs/DECISIONES.md
 ```
 
 | Componente | Carpeta |
@@ -80,15 +81,53 @@ Hay dos consumidores configurados, `cliente-demo` y `cliente-demo-2`, cada uno c
 | `POST` | `/api/reservas` | `reservas` `POST /reservas` → inicia la Saga |
 | `GET` | `/api/reservas/{saga_id}` | `reservas` `GET /reservas/{saga_id}` → estado y saga log |
 | `GET` | `/api/espacios?fecha=YYYY-MM-DD` | `espacios` `GET /espacios` → disponibilidad |
-| `GET` | `/bff/web/mis-reservas/{saga_id}` | `bff-web` `GET /mis-reservas/{saga_id}` → vista agregada |
+| `GET` | `/bff/web/mis-reservas/{saga_id}` | `bff-web` `GET /mis-reservas/{saga_id}` → vista agregada de Espacios, Pagos y Acceso |
 
-Cualquier otra ruta responde `404` desde Kong. Cada respuesta trae un encabezado `X-Request-ID`, que Kong también envía al servicio para seguir la petición en los logs.
+Cualquier otra ruta responde `404` desde Kong (el `/health` y el `/metrics` del BFF, por ejemplo, no pasan por el gateway). Cada respuesta trae un encabezado `X-Request-ID`, que Kong también envía al servicio para seguir la petición en los logs.
 
 Ejemplo (Git Bash):
 
 ```bash
 TOKEN=$(python scripts/generar_token.py)
 curl -i "http://localhost:8000/api/espacios?fecha=2026-11-20" -H "Authorization: Bearer $TOKEN"
+```
+
+## BFF Web
+
+`GET /bff/web/mis-reservas/{saga_id}` compone en una sola respuesta datos de tres servicios: el espacio (Espacios), el estado del pago (Pagos) y el estado y QR de la puerta (Acceso). Consulta las tres fuentes **en paralelo**, cada una con su timeout y su propio pool de conexiones, de modo que una fuente lenta no agota las conexiones de las otras.
+
+| Situación | Respuesta del BFF |
+|---|---|
+| Las tres fuentes responden | `200`, `degradado: false` |
+| Acceso lento, caído o con error | `200`, `degradado: true`, `acceso.qr: "no disponible"`, `no_disponibles: ["ACCESO"]` |
+| Acceso informa que la saga no habilitó la puerta | `200`, `acceso.qr: null` (no es una degradación) |
+| Pagos informa que no hubo cobro | `200`, `pago: null` |
+| Espacios no conoce el `saga_id` | `404 RESERVA_NO_EXISTE` |
+| Espacios o Pagos lentos, caídos o con error | `502 ESPACIOS_FALLO` / `502 PAGOS_FALLO` |
+
+Acceso es la única fuente opcional: sin el QR la vista sigue siendo útil, mientras que sin el espacio o sin el pago podría leerse como "no hay reserva" o "no pagué" (decisión D-54).
+
+```bash
+TOKEN=$(python scripts/generar_token.py)
+curl -s "http://localhost:8000/bff/web/mis-reservas/<saga_id>" -H "Authorization: Bearer $TOKEN"
+```
+
+Cada consulta reenvía el `X-Request-ID` de Kong y deja una línea de log en JSON con `request_id`, `saga_id`, `fuente`, `resultado` y `duracion_ms` (`docker compose logs bff-web`). Las métricas se publican en `/metrics/` y las recoge Prometheus: `bff_consultas_fuente_total{fuente,resultado}`, `bff_latencia_fuente_segundos{fuente}` y `bff_respuestas_total{resultado}`.
+
+Sus pruebas no necesitan Docker: simulan las tres fuentes en memoria.
+
+```bash
+cd services/bff-web
+pip install -r requirements.txt pytest
+pytest -q
+```
+
+## Prueba de la capa de exposición
+
+Comprueba en un solo script que el gateway rechaza sin token y con token inválido (`401`), que una ráfaga de peticiones paralelas recibe `429` y que solo Kong publica un puerto hacia afuera. Requiere el sistema levantado y `curl`:
+
+```bash
+bash scripts/probar_exposicion.sh
 ```
 
 ## Prueba de humo
@@ -109,6 +148,16 @@ Pagos y Acceso traen pruebas de contrato que se ejecutan dentro de su contenedor
 docker compose exec pagos pytest -q -p no:cacheprovider tests
 docker compose exec acceso pytest -q -p no:cacheprovider tests
 ```
+
+## Parámetros de resiliencia
+
+Los timeouts, el Circuit Breaker, el Bulkhead y los reintentos se configuran con variables de entorno, con los valores acordados por defecto (ver [docs/DECISIONES.md](docs/DECISIONES.md), D-40 a D-49). [.env.example](.env.example) lista todos los nombres. Para un experimento basta cambiar uno, por ejemplo:
+
+```bash
+TIMEOUT_ACCESO_S=1 docker compose up -d
+```
+
+Los `TIMEOUT_*` los leen `reservas` y el BFF.
 
 ## Inyección de fallas
 
@@ -152,6 +201,15 @@ _La verificación de punta a punta queda pendiente hasta que esté implementado 
 
 Para comparar el sistema sin los patrones de resiliencia, levantar con `RESILIENCE_ENABLED=false` (ver [.env.example](.env.example)).
 
+**Evidencia desde el BFF.** Con Espacios y Pagos respondiendo y una saga existente, la degradación de Acceso se puede ver sin esperar al orquestador:
+
+```bash
+python scripts/chaos.py acceso slow 3000   # Acceso tarda más que el timeout del BFF (1,5 s)
+curl -s "http://localhost:8000/bff/web/mis-reservas/<saga_id>" -H "Authorization: Bearer $TOKEN"
+# 200 en ~1,5 s, "degradado": true, "qr": "no disponible"; Espacios y Pagos siguen intactos
+python scripts/chaos.py acceso ok          # vuelve el QR
+```
+
 ## Estructura
 
 ```
@@ -159,8 +217,10 @@ gateway/kong.yml                 Configuración declarativa de Kong
 services/<servicio>/             Un microservicio FastAPI por carpeta (Dockerfile + app/)
 observability/                   Prometheus y aprovisionamiento de Grafana
 k6/                              Scripts de carga y prueba de humo
+docs/DECISIONES.md               Registro de decisiones de diseño y alternativas descartadas
 docs/api/                        Contratos OpenAPI de cada servicio
 scripts/generar_token.py         JWT de desarrollo
+scripts/probar_exposicion.sh     Verifica JWT, rate limiting y puertos publicados
 scripts/chaos.py                 Cambia el modo de falla de Pagos y Acceso
 scripts/exportar_contratos.py    Regenera docs/api/ a partir del código
 ```
