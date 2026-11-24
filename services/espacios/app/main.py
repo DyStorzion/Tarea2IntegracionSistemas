@@ -178,6 +178,10 @@ async def liberar(saga_id: str, sesion: AsyncSession = Depends(obtener_sesion)):
     response_model=ReservaEspacioOut,
     responses={404: {"model": ErrorRespuesta, "description": "RESERVA_NO_EXISTE"}},
 )
-async def obtener(saga_id: str):
+async def obtener(saga_id: str, sesion: AsyncSession = Depends(obtener_sesion)):
     """Consulta usada por el BFF."""
-    raise no_implementado()
+    # Una saga ANULADA no tiene reserva asociada: para quien consulta, no existe (como Pagos y Acceso).
+    reserva = await sesion.get(ReservaEspacio, saga_id)
+    if reserva is None or reserva.estado == ANULADA:
+        raise error(404, CodigoError.RESERVA_NO_EXISTE, f"No hay una reserva para la saga {saga_id}")
+    return ReservaEspacioOut.model_validate(reserva, from_attributes=True)
