@@ -72,6 +72,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-52 | Modelo de datos de Espacios | Catálogo en BD, PK `saga_id`, ANULADA en la misma tabla, copia del precio | Aceptada |
 | D-53 | Reglas del paso 1 | Repetición → 200; índice único; `422 FRANJA_PASADA` en hora local | Aceptada |
 | D-54 | Frontera entre orquestador y resiliencia | Toda llamada a dependencias pasa por `app/resiliencia.py`; el orquestador decide qué hacer con el resultado | Pendiente de confirmar (rol B) |
+| D-55 | Fuentes del BFF | 502 si fallan Espacios o Pagos; solo Acceso se degrada | Aceptada |
 
 ---
 
@@ -138,6 +139,19 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 - **Alternativas descartadas:**
   - *Exponer también el BFF:* permitido por el enunciado, pero abriría una segunda entrada que salta la autenticación y el rate limiting.
 - **Justificación:** un único punto de entrada, fácil de demostrar (intentar llamar a un servicio interno desde fuera falla).
+
+### D-55 · El BFF responde 502 si fallan Espacios o Pagos; solo Acceso se degrada
+- **Fecha:** 23-11-2026 · **Estado:** Aceptada · **Precisa:** D-23
+- **Decisión:** `GET /mis-reservas/{saga_id}` consulta las tres fuentes en paralelo, cada una con su timeout (D-40) y su propio pool HTTP.
+  - *Acceso* es una fuente opcional: si da timeout, error o está caído, la respuesta es `200` con `degradado: true`, `acceso.qr: "no disponible"` y `no_disponibles: ["ACCESO"]`. Si Acceso responde `ACCESO_NO_EXISTE`, la saga no habilitó la puerta y la respuesta es `200` con `acceso.qr: null` (no es una degradación).
+  - *Espacios* y *Pagos* son fuentes obligatorias: si dan timeout, error o están caídas, el BFF responde `502` con `ESPACIOS_FALLO` o `PAGOS_FALLO` (si fallan ambas, `ESPACIOS_FALLO`). `RESERVA_NO_EXISTE` de Espacios es `404`; `COBRO_NO_EXISTE` de Pagos es `200` con `pago: null`.
+  - Un `404` que no trae el código de "no existe" esperado (p. ej. una ruta inexistente) cuenta como fallo de la fuente, no como ausencia de datos.
+- **Alternativas descartadas:**
+  - *Respuesta parcial para las tres fuentes (`espacio: null`, `pago: null`):* una vista sin el espacio o sin el estado del pago puede leerse como "no hay reserva" o "no pagué", y el cliente actuaría sobre un dato falso. Con Acceso no pasa: su ausencia solo afecta al QR y se informa explícitamente.
+  - *502 también cuando falla Acceso:* contradice D-23 y quita al BFF su papel de evidencia de que el sistema sigue funcionando con la puerta caída (escenario 3).
+  - *Consultas en serie:* la latencia sería la suma de las tres fuentes en vez de la mayor.
+- **Justificación:** separa lo que hace inútil la vista (el espacio y el pago) de lo que solo la empobrece (el QR). El `502` indica que una dependencia falló de verdad. Un pool por dependencia evita que una fuente lenta agote las conexiones de las otras.
+- **Consecuencia:** cambia `services/bff-web/app/contrato.py` (`espacio` pasa a ser obligatorio, `FuenteDatos` solo contiene `ACCESO`, nuevos códigos `ESPACIOS_FALLO` y `PAGOS_FALLO`). Hay que regenerar `docs/api/bff-web.json` con `scripts/exportar_contratos.py`.
 
 ---
 
