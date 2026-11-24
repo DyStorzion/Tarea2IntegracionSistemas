@@ -240,13 +240,36 @@ Los scripts de k6 corren dentro de la red de Docker y pueden cambiar el modo lla
 
 _La verificación de punta a punta queda pendiente hasta que esté implementado el orquestador de la Saga._
 
-| Escenario | Cómo provocarlo | Resultado esperado |
-|---|---|---|
-| 1. Éxito | Sin fallas inyectadas | Los tres pasos quedan firmes: saga `CONFIRMADA` |
-| 2. Fallo con compensación | `python scripts/chaos.py acceso error` | Acceso falla en el paso 3: reembolso y liberación del espacio en orden inverso; saga `COMPENSADA` |
-| 3. Falla en cascada contenida | `python scripts/chaos.py acceso slow 3000` y luego `docker compose stop acceso` | El Circuit Breaker abre y responde de inmediato, y el Bulkhead rechaza el exceso; el resto del sistema sigue respondiendo |
+Cada escenario es un script de k6 que genera reservas a través de Kong, inyecta la falla en el momento indicado (llamando a `/admin/chaos` dentro de la red) y la retira al final. Las reservas se reparten entre los dos consumidores para no chocar con el rate limiting.
 
-Para comparar el sistema sin los patrones de resiliencia, levantar con `RESILIENCE_ENABLED=false` (ver [.env.example](.env.example)).
+| Escenario | Script | Falla inyectada | Resultado esperado |
+|---|---|---|---|
+| 1. Éxito | `exito.js` (30 s, 4 reservas/s) | Ninguna | Los tres pasos quedan firmes: `201`, saga `CONFIRMADA` |
+| 2. Fallo con compensación | `compensacion.js` (80 s, 2 reservas/s) | Acceso responde `500` entre los segundos 15 y 55 | Acceso falla en el paso 3: reembolso y liberación del espacio en orden inverso, `502` `COMPENSADA`. Tras unos fallos el circuito abre y las siguientes reservas se rechazan sin cobrar (`503`) |
+| 3. Falla en cascada contenida | `cascada.js` (110 s, 4 reservas/s y 2 consultas de disponibilidad/s) | Acceso tarda 3 s (más que su timeout) entre los segundos 20 y 80 | El Circuit Breaker abre y las reservas fallan en milisegundos (`503`) en vez de esperar a Acceso; la consulta de disponibilidad sigue respondiendo igual |
+| 4. Bulkhead | `bulkhead.js` (100 s, 16 reservas/s y 2 consultas/s) | Acceso tarda 1,3 s (dentro del timeout) entre los segundos 20 y 80 | El circuito no abre porque Acceso responde a tiempo; el Bulkhead deja como máximo 5 llamadas simultáneas a Acceso y rechaza el exceso (`503 ACCESO_SATURADO`). Espacios y Pagos no se contagian |
+
+```bash
+docker compose run --rm k6 run /scripts/exito.js
+docker compose run --rm k6 run /scripts/compensacion.js
+docker compose run --rm k6 run /scripts/cascada.js
+docker compose run --rm k6 run /scripts/bulkhead.js
+```
+
+Al terminar, cada script muestra un resumen y lo guarda en `k6/resultados/` (texto y JSON, con el escenario, la fecha y si los patrones estaban activos): la línea de tiempo, los **umbrales** que el patrón debe garantizar (✓/✗), las sagas por fase y estado, el motivo de las no confirmadas y las latencias que vio el cliente. Mientras corre, el [dashboard](#dashboard) muestra lo mismo en vivo.
+
+**Con y sin los patrones.** Para comparar, se corre el mismo escenario con `reservas` levantado sin Circuit Breaker ni Bulkhead y luego con ellos:
+
+```bash
+RESILIENCE_ENABLED=false docker compose up -d reservas   # PowerShell: $env:RESILIENCE_ENABLED="false"; docker compose up -d reservas
+docker compose run --rm k6 run /scripts/cascada.js
+RESILIENCE_ENABLED=true docker compose up -d reservas    # PowerShell: $env:RESILIENCE_ENABLED="true"; docker compose up -d reservas
+docker compose run --rm k6 run /scripts/cascada.js
+```
+
+Con los patrones, los umbrales pasan; sin ellos fallan los que muestran el aporte de cada patrón: en `cascada.js` las reservas tardan lo que tarda Acceso, y en `bulkhead.js` Acceso ocupa el pool compartido y las reservas fallan en Espacios o Pagos aunque estén sanos.
+
+**Acceso caído de verdad.** k6 no controla Docker, así que este caso se provoca a mano durante cualquier escenario: `docker compose stop acceso` y luego `docker compose start acceso`. Las llamadas fallan al conectar, el circuito abre igual que con la lentitud y las reservas se rechazan de inmediato.
 
 **Evidencia desde el BFF.** Con Espacios y Pagos respondiendo y una saga existente, la degradación de Acceso se puede ver sin esperar al orquestador:
 
@@ -263,7 +286,8 @@ python scripts/chaos.py acceso ok          # vuelve el QR
 gateway/kong.yml                 Configuración declarativa de Kong
 services/<servicio>/             Un microservicio FastAPI por carpeta (Dockerfile + app/)
 observability/                   Prometheus, aprovisionamiento de Grafana y el dashboard de resiliencia
-k6/                              Scripts de carga y prueba de humo
+k6/                              Prueba de humo y escenarios de falla (lib/ con el código común)
+k6/resultados/                   Resumen de cada corrida de los escenarios (no se versiona)
 docs/DECISIONES.md               Registro de decisiones de diseño y alternativas descartadas
 docs/api/                        Contratos OpenAPI de cada servicio
 scripts/generar_token.py         JWT de desarrollo
