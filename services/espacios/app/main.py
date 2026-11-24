@@ -1,6 +1,6 @@
 """Servicio Espacios: reserva y libera un puesto o sala por franja.
 
-Las rutas definen el contrato (ver app/contrato.py). Responden 501 hasta implementarse.
+El contrato de la API está en app/contrato.py y en docs/api/espacios.json.
 """
 
 import logging
@@ -9,14 +9,17 @@ from datetime import date, datetime, time
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from prometheus_client import Counter, make_asgi_app
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import SERVICE_NAME, ZONA_HORARIA
 from app.contrato import (
+    BLOQUE_MAX,
+    BLOQUE_MIN,
     CodigoError,
+    EspacioDisponible,
     DisponibilidadOut,
     ErrorRespuesta,
     LiberacionOut,
@@ -47,13 +50,6 @@ app = FastAPI(title="Servicio Espacios", version="0.2.0", lifespan=lifespan)
 app.mount("/metrics", make_asgi_app())
 
 
-def no_implementado() -> HTTPException:
-    return HTTPException(
-        status_code=501,
-        detail={"codigo": CodigoError.NO_IMPLEMENTADO, "mensaje": "Definido en el contrato, pendiente de implementación"},
-    )
-
-
 def error(status: int, codigo: CodigoError, mensaje: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"codigo": codigo, "mensaje": mensaje})
 
@@ -69,13 +65,37 @@ async def health():
 
 
 @app.get("/espacios", response_model=DisponibilidadOut)
-async def listar_espacios(fecha: date = Query(description="Día a consultar (AAAA-MM-DD)")):
+async def listar_espacios(
+    fecha: date = Query(description="Día a consultar (AAAA-MM-DD)"),
+    sesion: AsyncSession = Depends(obtener_sesion),
+):
     """Lista los espacios y sus bloques libres en una fecha.
 
     Expuesto por el gateway como `GET /api/espacios?fecha=...`. No depende de Acceso,
     por lo que sirve para mostrar que el sistema sigue respondiendo cuando Acceso falla.
+    Los bloques que ya empezaron no se listan (misma regla que al reservar, D-53).
     """
-    raise no_implementado()
+    espacios = (await sesion.scalars(select(Espacio).order_by(Espacio.espacio_id))).all()
+    ocupados = set(
+        (await sesion.execute(
+            select(ReservaEspacio.espacio_id, ReservaEspacio.bloque)
+            .where(ReservaEspacio.fecha == fecha, ReservaEspacio.estado == RESERVADA)
+        )).all()
+    )
+    libres = [b for b in range(BLOQUE_MIN, BLOQUE_MAX + 1) if not bloque_iniciado(fecha, b)]
+    return DisponibilidadOut(
+        fecha=fecha,
+        espacios=[
+            EspacioDisponible(
+                espacio_id=e.espacio_id,
+                nombre=e.nombre,
+                tipo=e.tipo,
+                precio=e.precio,
+                bloques_disponibles=[b for b in libres if (e.espacio_id, b) not in ocupados],
+            )
+            for e in espacios
+        ],
+    )
 
 
 @app.post(
