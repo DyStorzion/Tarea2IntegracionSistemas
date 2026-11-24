@@ -6,7 +6,10 @@ set -uo pipefail
 GW="${GATEWAY_URL:-http://localhost:8000}"
 RUTA="${RUTA:-/api/espacios}"   # cualquier ruta enrutada sirve: aquí solo importa pasar la puerta
 DIR="$(cd "$(dirname "$0")" && pwd)"
-TOKEN="$(python3 "$DIR/generar_token.py")"
+# En Windows (Git Bash) suele existir `python` pero no `python3`
+PY="$(command -v python3 || command -v python || true)"
+if [ -z "$PY" ]; then echo "No encontré python3 ni python en el PATH de este bash" >&2; exit 1; fi
+TOKEN="$("$PY" "$DIR/generar_token.py")"
 
 codigo() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
@@ -27,7 +30,7 @@ seq 1 40 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
 echo "5) Puertos publicados al exterior (esperado: solo el de Kong)"
 if command -v docker >/dev/null 2>&1; then
   docker compose config --format json 2>/dev/null \
-    | python3 -c '
+    | "$PY" -c '
 import json, sys
 cfg = json.load(sys.stdin)
 for nombre, svc in cfg["services"].items():
