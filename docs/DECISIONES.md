@@ -71,7 +71,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-51 | Acceso a datos | SQLAlchemy ORM asíncrono sobre `asyncpg`, como Pagos y Acceso | Aceptada |
 | D-52 | Modelo de datos de Espacios | Catálogo en BD, PK `saga_id`, ANULADA en la misma tabla, copia del precio | Aceptada |
 | D-53 | Reglas del paso 1 | Repetición → 200; índice único; `422 FRANJA_PASADA` en hora local | Aceptada |
-| D-54 | Frontera entre orquestador y resiliencia | Toda llamada a dependencias pasa por `app/resiliencia.py`; el orquestador decide qué hacer con el resultado | Pendiente de confirmar (rol B) |
+| D-54 | Frontera entre orquestador y resiliencia | Toda llamada a dependencias pasa por `app/resiliencia.py`; el orquestador decide qué hacer con el resultado | Aceptada |
 | D-55 | Fuentes del BFF | 502 si fallan Espacios o Pagos; solo Acceso se degrada | Aceptada |
 
 ---
@@ -723,7 +723,7 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
 ## 11. Frontera entre el orquestador y la resiliencia
 
 ### D-54 · Toda llamada a las dependencias pasa por el módulo de resiliencia
-- **Fecha:** 23-11-2026 · **Estado:** Pendiente de confirmar (revisión del rol B)
+- **Fecha:** 23-11-2026 · **Estado:** Aceptada (confirmada por el rol B el 24-11-2026: la interfaz implementada coincide con la documentada)
 - **Contexto:** el orquestador (rol B) y la capa de resiliencia (rol C) viven en el mismo servicio, `reservas`. Sin una frontera acordada, los dos roles editarían las mismas funciones y las garantías de D-40 a D-49 dependerían de que cada llamada se escriba "bien".
 - **Regla para dividir el trabajo:** el módulo decide **cómo** se llama a una dependencia (si se llama, cuántas veces, cuánto se espera y qué pasó). El orquestador decide **qué** se llama, en qué orden y qué significa el resultado para la saga.
 
