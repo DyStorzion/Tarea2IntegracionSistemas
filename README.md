@@ -51,10 +51,12 @@ Puertos disponibles en el host:
 | URL | Qué es | Expuesto en |
 |---|---|---|
 | http://localhost:8000 | API Gateway (Kong), único punto de entrada al sistema. Se cambia con `GATEWAY_PORT` | todas las interfaces |
-| http://127.0.0.1:3000 | Grafana (acceso anónimo como administrador, sin login) | solo localhost |
-| http://127.0.0.1:9090 | Prometheus | solo localhost |
+| http://127.0.0.1:3000 | Grafana (acceso anónimo como administrador, sin login). Se cambia con `GRAFANA_PORT` | solo localhost |
+| http://127.0.0.1:9090 | Prometheus. Se cambia con `PROMETHEUS_PORT` | solo localhost |
 
 Los microservicios, las bases de datos y el endpoint de métricas de Kong (`kong:8100/metrics`) no publican puertos: solo son accesibles dentro de la red interna de Docker.
+
+En Windows, si `docker compose up` falla con `bind: An attempt was made to access a socket in a way forbidden by its access permissions`, el sistema tiene reservado ese puerto (rangos de Hyper-V/WinNAT; se ven con `netsh interface ipv4 show excludedportrange protocol=tcp`). Basta con usar otro: `GRAFANA_PORT=3001 docker compose up -d` o fijarlo en el `.env`.
 
 Para bajar todo y borrar las bases de datos:
 
