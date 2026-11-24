@@ -71,6 +71,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-51 | Acceso a datos | SQLAlchemy ORM asíncrono sobre `asyncpg`, como Pagos y Acceso | Aceptada |
 | D-52 | Modelo de datos de Espacios | Catálogo en BD, PK `saga_id`, ANULADA en la misma tabla, copia del precio | Aceptada |
 | D-53 | Reglas del paso 1 | Repetición → 200; índice único; `422 FRANJA_PASADA` en hora local | Aceptada |
+| D-54 | Frontera entre orquestador y resiliencia | Toda llamada a dependencias pasa por `app/resiliencia.py`; el orquestador decide qué hacer con el resultado | Pendiente de confirmar (rol B) |
 
 ---
 
@@ -701,6 +702,92 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   - *Publicar Pagos y Acceso en `127.0.0.1`:* expone el servicio completo saltándose Kong; se puede leer como incumplir "solo el gateway se expone".
   - *Variables de entorno y reinicio:* tarda segundos y no permite cambiar el modo durante una prueba de carga.
 - **Justificación:** no expone nada, no agrega infraestructura y permite experimentos automatizados con una línea de tiempo clara.
+
+---
+
+## 11. Frontera entre el orquestador y la resiliencia
+
+### D-54 · Toda llamada a las dependencias pasa por el módulo de resiliencia
+- **Fecha:** 23-11-2026 · **Estado:** Pendiente de confirmar (revisión del rol B)
+- **Contexto:** el orquestador (rol B) y la capa de resiliencia (rol C) viven en el mismo servicio, `reservas`. Sin una frontera acordada, los dos roles editarían las mismas funciones y las garantías de D-40 a D-49 dependerían de que cada llamada se escriba "bien".
+- **Regla para dividir el trabajo:** el módulo decide **cómo** se llama a una dependencia (si se llama, cuántas veces, cuánto se espera y qué pasó). El orquestador decide **qué** se llama, en qué orden y qué significa el resultado para la saga.
+
+  | Responsabilidad | Módulo de resiliencia (C) | Orquestador (B) |
+  |---|---|---|
+  | Llamada HTTP con timeout, retry, Circuit Breaker y Bulkhead | ✅ | |
+  | Clasificar el resultado: OK, error, timeout, rechazado, incierto | ✅ | |
+  | Informar si el circuito de Acceso está abierto | ✅ | |
+  | Ordenar los pasos y compensar en orden inverso | | ✅ |
+  | Rechazo previo con el circuito abierto (D-10) | Da el dato | ✅ Decide |
+  | Compensar el paso fallido solo si fue incierto (D-45) | Da el dato | ✅ Decide |
+  | Interpretar los 4xx de negocio (`404`, `409`, `402`, `422`) | | ✅ |
+  | Guardar la saga y su saga log; responder con los códigos de D-35 | | ✅ |
+
+- **Interfaz** (`services/reservas/app/resiliencia.py`):
+
+  ```python
+  await iniciar()   # en el lifespan de main.py, al arrancar: crea el cliente HTTP compartido
+  await cerrar()    # en el lifespan de main.py, al apagar
+
+  r = await paso(dependencia, metodo, ruta, json=None, request_id=None)          # pasos 1, 2 y 3
+  r = await compensacion(dependencia, metodo, ruta, json=None, request_id=None)  # liberar, reembolsar, revocar
+  acceso_disponible() -> bool   # False si el circuito de Acceso está abierto (rechazo previo, D-10)
+  ```
+
+  `dependencia` es `"espacios"`, `"pagos"` o `"acceso"`. `paso()` aplica las reglas de los pasos (Circuit Breaker y Bulkhead en Acceso, timeouts de D-40, retry solo ante errores rápidos); `compensacion()` aplica las de las compensaciones (sin Circuit Breaker ni Bulkhead, timeout de 5 s, 3 intentos). Ninguna de las dos lanza excepciones por fallas de red: siempre devuelven un `Resultado`.
+
+- **`Resultado`:** sus campos coinciden con los de `Paso` del contrato de `reservas`, así el saga log se arma copiando campos.
+
+  | Campo | Significado |
+  |---|---|
+  | `resultado` | `OK`, `ERROR`, `TIMEOUT` o `RECHAZADO` (el `ResultadoPaso` del contrato) |
+  | `codigo_http` | Código que respondió la dependencia; `None` si no respondió |
+  | `cuerpo` | JSON de la respuesta (p. ej. `precio` de Espacios, `qr` de Acceso); `None` si no respondió |
+  | `detalle` | Código fijo del motivo, para que el orquestador decida sin comparar textos: el `codigo` del error si la dependencia respondió con error (p. ej. `FRANJA_OCUPADA`; `HTTP_<código>` si la respuesta no trae el formato común, como un 500 no controlado), o uno de `CIRCUITO_ABIERTO`, `BULKHEAD_LLENO`, `POOL_AGOTADO`, `CONEXION_RECHAZADA`, `CONEXION_CORTADA`, `TIMEOUT_CONEXION`, `TIMEOUT_RESPUESTA`. `None` si salió bien |
+  | `incierto` | `True` si no se sabe si la dependencia aplicó la operación (D-45) |
+  | `intentos` | Cuántas veces se intentó la llamada |
+  | `inicio`, `duracion_ms` | Momento del primer intento y duración total, retries incluidos |
+
+- **Clasificación** (la hace el módulo, según D-44 y D-45):
+
+  | Qué pasó | `resultado` | `detalle` | `incierto` |
+  |---|---|---|---|
+  | Respuesta 2xx | `OK` | `None` | No |
+  | Respuesta 4xx o 5xx | `ERROR` (con `codigo_http` y `cuerpo`) | `codigo` del error | No |
+  | Conexión rechazada (nadie escucha en ese puerto) | `ERROR` | `CONEXION_RECHAZADA` | No: la petición no salió |
+  | Timeout al conectar (también un contenedor detenido: su nombre no se resuelve a tiempo) | `TIMEOUT` | `TIMEOUT_CONEXION` | No: la petición no salió |
+  | Sin conexión libre en el pool compartido dentro del timeout | `TIMEOUT` | `POOL_AGOTADO` | No: la petición no salió |
+  | Timeout de respuesta | `TIMEOUT` | `TIMEOUT_RESPUESTA` | **Sí** |
+  | Conexión cortada después de enviar | `ERROR` | `CONEXION_CORTADA` | **Sí** |
+  | Circuito abierto | `RECHAZADO` | `CIRCUITO_ABIERTO` | No: no se llamó |
+  | Bulkhead sin cupo | `RECHAZADO` | `BULKHEAD_LLENO` | No: no se llamó |
+
+  Con esto, los `503` de D-35 salen directo del `detalle`: `CIRCUITO_ABIERTO` → `ACCESO_NO_DISPONIBLE`, `BULKHEAD_LLENO` → `ACCESO_SATURADO`.
+
+- **Reglas para el orquestador:**
+  1. **No usa `httpx` para llamar a Espacios, Pagos ni Acceso.** Un cliente propio rompería el pool compartido que protege el Bulkhead (D-43) y dejaría llamadas sin timeout ni Circuit Breaker.
+  2. **No captura excepciones de red**; usa `resultado` e `incierto`.
+  3. **Pasa el `X-Request-ID`** recibido de Kong en `request_id`, para que la petición se pueda seguir en los logs de todos los servicios.
+- **Archivos y responsables:**
+
+  | Archivo o elemento | Responsable |
+  |---|---|
+  | `app/resiliencia.py`, `tests/test_resiliencia.py` | C |
+  | `app/main.py`, el código de la saga, `db.py`, `modelos.py`, sus pruebas | B |
+  | Dos líneas en el lifespan de `main.py` (`iniciar()` y `cerrar()`) | B, al integrar |
+  | `requirements.txt` y `Dockerfile` de `reservas` | Ambos: avisarse (C agrega `pytest` y `COPY tests`; B, SQLAlchemy y `asyncpg`) |
+  | Bloque de variables de resiliencia de `reservas` en `docker-compose.yml` | C, avisando al rol A |
+  | Métricas `dependencia_*`, `circuito_*`, `bulkhead_*` | C |
+  | Métricas `saga_*` | B |
+
+- **Variables de entorno** (D-48), con sus valores por defecto: `RESILIENCE_ENABLED=true`, `POOL_CONEXIONES=20`, `TIMEOUT_CONEXION_S=0.5`, `TIMEOUT_ESPACIOS_S=1`, `TIMEOUT_PAGOS_S=2`, `TIMEOUT_ACCESO_S=1.5`, `TIMEOUT_COMPENSACION_S=5`, `CB_VENTANA=10`, `CB_MINIMO_LLAMADAS=5`, `CB_UMBRAL_FALLOS=0.5`, `CB_ESPERA_ABIERTO_S=10`, `BULKHEAD_ACCESO_CUPOS=5`, `RETRY_INTENTOS_PASO=2`, `RETRY_INTENTOS_COMPENSACION=3`.
+- **Trabajo en paralelo:** el rol C sube primero una versión de `resiliencia.py` con esta interfaz que hace llamadas simples (con timeout, sin los patrones). El rol B escribe el orquestador contra ella desde ese momento; después, el rol C completa el módulo sin que cambie la interfaz.
+- **Alternativas descartadas:**
+  - *Patrones escritos dentro del código de la saga:* mezcla responsabilidades, los dos roles editarían las mismas funciones y `RESILIENCE_ENABLED` quedaría repartido por todo el código.
+  - *El módulo lanza excepciones (`CircuitoAbierto`, `Timeout`…) que el orquestador captura:* el orquestador tendría que conocer los tipos de error de red y repetir la clasificación de D-45, con más riesgo de tratar un timeout incierto como certero.
+  - *Decoradores que el orquestador aplica a cada llamada:* si se olvida uno, esa llamada queda sin protección y fuera del pool compartido.
+  - *Un proxy aparte (p. ej. Envoy) con los patrones:* infraestructura extra y contradice la implementación propia de D-14.
+- **Justificación:** cada rol trabaja en sus propios archivos y puede probar su parte por separado. Las garantías de resiliencia quedan en un solo lugar, y el comportamiento con y sin los patrones (D-20) se cambia sin tocar el código de la saga.
 
 ---
 
