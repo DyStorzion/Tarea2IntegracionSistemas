@@ -304,6 +304,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - **Repetición con el mismo `saga_id`:** responde `200` con la reserva original, aunque traiga otros datos (como Pagos y Acceso).
   - **Bloque ocupado:** solo el índice único lo detecta. El `INSERT` usa `ON CONFLICT` sobre `saga_id`; si otra saga tiene el bloque, Postgres rechaza la sentencia por el índice `un_cliente_por_bloque` y se responde `409 FRANJA_OCUPADA`.
   - **Bloques pasados:** se rechaza con `422 FRANJA_PASADA` un bloque que ya empezó en hora local del cowork (`America/Santiago`, configurable con `ESPACIOS_ZONA_HORARIA`). Una repetición de una reserva ya hecha no se rechaza por esto.
+  - **Disponibilidad (`GET /espacios?fecha=`):** aplica la misma regla; los bloques que ya empezaron no se listan, y una fecha pasada responde `200` con listas vacías. Lo que se ofrece coincide con lo que se puede reservar. *Descartadas:* listarlos igual (se ofrecerían bloques que al reservar dan `422`) y responder `422` a una fecha pasada (un error en una consulta de solo lectura).
   - **Observabilidad:** contador `espacios_operaciones_total{operacion,resultado}` y una línea de log por resultado.
 - **Alternativas descartadas:**
   - *`409` si la repetición trae datos distintos:* en este sistema el `saga_id` lo genera `reservas` y siempre reenvía los mismos datos; agregaría un caso sin uso real.
