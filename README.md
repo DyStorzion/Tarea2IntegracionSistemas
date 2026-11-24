@@ -183,6 +183,19 @@ Pruebas unitarias del módulo. No necesitan los demás servicios: las dependenci
 docker compose exec reservas pytest -q -p no:cacheprovider tests
 ```
 
+### Dashboard
+
+Grafana (http://127.0.0.1:3000) carga solo el dashboard **Cowork · Resiliencia ante fallas**, en la carpeta *Cowork*. Se actualiza cada 5 s y marca con una franja las fallas inyectadas y los servicios que dejan de responder.
+
+| Sección | Qué mirar |
+|---|---|
+| Estado actual y línea de tiempo | Falla inyectada en Acceso y Pagos, si los patrones están activos y el estado del circuito (cerrado, semiabierto, abierto). Es el eje para leer el resto |
+| Lo que ve el cliente | Códigos HTTP de `/api/reservas` (201, 402/409, 502 compensada, 503 fail-fast) y latencia p95 de cada servicio en el gateway |
+| Resiliencia | Intentos hacia Acceso por resultado (timeouts que pasan a rechazos del circuito o del Bulkhead), conexiones en uso frente al pool y a los cupos del Bulkhead, latencia de cada dependencia, fallas técnicas de Espacios y Pagos, y compensaciones |
+| Dependencias externas y BFF | Lo que Acceso y Pagos realmente aplicaron (incluidas las operaciones que llegan tarde en modo lento) y las respuestas completas o degradadas del BFF |
+
+Para comparar con y sin los patrones, se repite el mismo escenario levantando `reservas` con `RESILIENCE_ENABLED=false` y luego con `true`. Sin Bulkhead, Acceso lento ocupa todo el pool y los pasos de Espacios y Pagos fallan con `POOL_AGOTADO`; con Bulkhead, Acceso no pasa de sus cupos y Espacios y Pagos siguen respondiendo.
+
 ## Parámetros de resiliencia
 
 Los timeouts, el Circuit Breaker, el Bulkhead y los reintentos se configuran con variables de entorno, con los valores acordados por defecto (ver [docs/DECISIONES.md](docs/DECISIONES.md), D-40 a D-49). [.env.example](.env.example) lista todos los nombres. Para un experimento basta cambiar uno, por ejemplo:
@@ -249,7 +262,7 @@ python scripts/chaos.py acceso ok          # vuelve el QR
 ```
 gateway/kong.yml                 Configuración declarativa de Kong
 services/<servicio>/             Un microservicio FastAPI por carpeta (Dockerfile + app/)
-observability/                   Prometheus y aprovisionamiento de Grafana
+observability/                   Prometheus, aprovisionamiento de Grafana y el dashboard de resiliencia
 k6/                              Scripts de carga y prueba de humo
 docs/DECISIONES.md               Registro de decisiones de diseño y alternativas descartadas
 docs/api/                        Contratos OpenAPI de cada servicio
