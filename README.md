@@ -151,6 +151,38 @@ docker compose exec pagos pytest -q -p no:cacheprovider tests
 docker compose exec acceso pytest -q -p no:cacheprovider tests
 ```
 
+## Resiliencia
+
+Todas las llamadas de `reservas` a Espacios, Pagos y Acceso pasan por un único módulo, [services/reservas/app/resiliencia.py](services/reservas/app/resiliencia.py), sobre un pool HTTP compartido de 20 conexiones:
+
+| Patrón | Dónde | Comportamiento |
+|---|---|---|
+| Timeout | Todas las llamadas | Conexión: 0,5 s. Pasos: Espacios 1 s, Pagos 2 s, Acceso 1,5 s. Compensaciones: 5 s |
+| Reintentos | Pasos | 2 intentos en total, solo ante conexión rechazada o 5xx; nunca ante un timeout |
+| Reintentos | Compensaciones | 3 intentos, también ante timeouts, con esperas de 0,2 y 0,4 s más una variación aleatoria |
+| Circuit Breaker | Acceso | Abre si fallan al menos el 50 % de las últimas 10 llamadas (con un mínimo de 5). Queda abierto 10 s y luego deja pasar una llamada de prueba. Mientras está abierto, las reservas se rechazan antes de empezar |
+| Bulkhead | Acceso | Como máximo 5 llamadas simultáneas; el exceso se rechaza al instante. Así Acceso nunca ocupa más de 5 de las 20 conexiones y Espacios y Pagos siguen teniendo dónde conectarse |
+
+Las compensaciones no pasan por el Circuit Breaker ni por el Bulkhead: tienen que intentarse aunque Acceso esté marcado como caído. Con `RESILIENCE_ENABLED=false` se quitan el Circuit Breaker y el Bulkhead (los timeouts y los reintentos se mantienen), para comparar el sistema con y sin los patrones.
+
+Métricas que publica `reservas` en `/metrics`:
+
+| Métrica | Qué muestra |
+|---|---|
+| `dependencia_llamadas_total{dependencia,tipo,resultado,detalle}` | Cada intento de llamada: `OK`, `ERROR`, `TIMEOUT` o `RECHAZADO`, y su motivo (`CIRCUITO_ABIERTO`, `BULKHEAD_LLENO`, `POOL_AGOTADO`, `TIMEOUT_RESPUESTA`, el código de error de la dependencia...) |
+| `dependencia_duracion_segundos{dependencia,tipo}` | Latencia de cada intento (histograma) |
+| `dependencia_en_curso{dependencia}`, `dependencia_pool_conexiones` | Llamadas abiertas hacia cada dependencia, frente al tamaño del pool |
+| `circuito_estado{dependencia}` | `0` cerrado, `1` semiabierto, `2` abierto |
+| `circuito_transiciones_total{dependencia,hacia}` | Aperturas y cierres del circuito |
+| `bulkhead_en_uso{dependencia}`, `bulkhead_cupos{dependencia}` | Cupos ocupados del Bulkhead, frente a los configurados |
+| `resiliencia_activada` | `1` si el Circuit Breaker y el Bulkhead están activos |
+
+Pruebas unitarias del módulo. No necesitan los demás servicios: las dependencias se simulan en memoria y el reloj del Circuit Breaker es falso.
+
+```bash
+docker compose exec reservas pytest -q -p no:cacheprovider tests
+```
+
 ## Parámetros de resiliencia
 
 Los timeouts, el Circuit Breaker, el Bulkhead y los reintentos se configuran con variables de entorno, con los valores acordados por defecto (ver [docs/DECISIONES.md](docs/DECISIONES.md), D-40 a D-49). [.env.example](.env.example) lista todos los nombres. Para un experimento basta cambiar uno, por ejemplo:
@@ -182,7 +214,7 @@ python scripts/chaos.py acceso ok           # vuelve a la normalidad
 
 Las fallas solo afectan a las rutas de negocio; `/health`, `/metrics` y `/admin` siguen respondiendo. El modo activo se publica en la métrica `chaos_modo_activo`, para ver en Grafana cuándo se activó cada falla. El modo vive en memoria: al reiniciar el servicio vuelve a `ok`.
 
-Para una **caída real** (el contenedor no existe, las conexiones se rechazan):
+Para una **caída real** (el contenedor no existe: las llamadas fallan al intentar conectarse):
 
 ```bash
 docker compose stop acceso

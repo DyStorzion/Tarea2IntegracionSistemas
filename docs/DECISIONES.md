@@ -606,7 +606,7 @@ Duración de la saga en cada escenario con estos valores:
 | 3a. Acceso lento (3 s) | Timeout de 1,5 s → incierto → revocar (responde a los 3 s) → reembolso → liberación | 4,6 s | `COMPENSADA` |
 | 3a. Tras ~5 sagas fallidas | El circuito abre; rechazo previo (D-10) | milisegundos | `RECHAZADA` (503) |
 | 3a. Con más concurrencia que cupos | El Bulkhead rechaza el exceso en el paso 3 | milisegundos | `COMPENSADA` (503) |
-| 3b. Acceso detenido | Conexión rechazada → 1 reintento → no se revoca → reembolso → liberación | 0,3 s | `COMPENSADA` |
+| 3b. Acceso detenido | Timeout de conexión de 0,5 s (el nombre del contenedor detenido no se resuelve; medido) → sin reintento → no se revoca → reembolso → liberación | 0,6 s | `COMPENSADA` |
 | Peor caso con **una** dependencia lenta (> 5 s) | Paso con timeout + compensación con 3 timeouts de 5 s | ~18 s | `COMPENSACION_PENDIENTE` |
 
 Límite aceptado: si dos o más dependencias están lentas a la vez, la saga puede pasar de 30 s. Kong responde 504, pero la saga termina igual en `reservas` y su resultado se consulta con `GET /api/reservas/{saga_id}`. Ningún escenario exigido cae en este caso.
@@ -776,7 +776,13 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   | Circuito abierto | `RECHAZADO` | `CIRCUITO_ABIERTO` | No: no se llamó |
   | Bulkhead sin cupo | `RECHAZADO` | `BULKHEAD_LLENO` | No: no se llamó |
 
-  Con esto, los `503` de D-35 salen directo del `detalle`: `CIRCUITO_ABIERTO` → `ACCESO_NO_DISPONIBLE`, `BULKHEAD_LLENO` → `ACCESO_SATURADO`.
+  Con esto, los `503` de D-35 salen directo del `detalle`: `CIRCUITO_ABIERTO` → `ACCESO_NO_DISPONIBLE`, `BULKHEAD_LLENO` → `ACCESO_SATURADO`. Para el `Retry-After` sirve `resiliencia.CB_ESPERA_ABIERTO_S`.
+
+- **Precisiones de la implementación** (cubiertas por `tests/test_resiliencia.py`):
+  - `POOL_AGOTADO` no cuenta en la ventana del Circuit Breaker, igual que el rechazo del Bulkhead: la petición no llegó a Acceso, así que no dice nada de su salud.
+  - Si el Bulkhead rechaza la llamada de prueba del semiabierto, la prueba queda libre para la siguiente llamada (si no, el circuito quedaría trabado rechazando todo).
+  - La variación aleatoria de las esperas de las compensaciones (D-44) es de hasta la mitad de cada espera: 0,2–0,3 s y 0,4–0,6 s.
+  - `incierto` del resultado final: el último intento falló y alguno de los intentos quedó incierto.
 
 - **Reglas para el orquestador:**
   1. **No usa `httpx` para llamar a Espacios, Pagos ni Acceso.** Un cliente propio rompería el pool compartido que protege el Bulkhead (D-43) y dejaría llamadas sin timeout ni Circuit Breaker.
