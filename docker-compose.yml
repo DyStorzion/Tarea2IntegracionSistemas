@@ -58,6 +58,11 @@ services:
       ESPACIOS_URL: http://espacios:8000
       PAGOS_URL: http://pagos:8000
       ACCESO_URL: http://acceso:8000
+      # Mismos plazos que reservas (D-40); misma variable en el .env cambia ambos servicios
+      TIMEOUT_CONEXION_S: ${TIMEOUT_CONEXION_S:-0.5}
+      TIMEOUT_ESPACIOS_S: ${TIMEOUT_ESPACIOS_S:-1}
+      TIMEOUT_PAGOS_S: ${TIMEOUT_PAGOS_S:-2}
+      TIMEOUT_ACCESO_S: ${TIMEOUT_ACCESO_S:-1.5}
 
   reservas:
     <<: *servicio
@@ -68,6 +73,22 @@ services:
       PAGOS_URL: http://pagos:8000
       ACCESO_URL: http://acceso:8000
       RESILIENCE_ENABLED: ${RESILIENCE_ENABLED:-true}
+      # D-48: parámetros de resiliencia con los valores acordados en DECISIONES.md (sección 10).
+      # reservas/app/config.py debe leer exactamente estos nombres.
+      TIMEOUT_CONEXION_S: ${TIMEOUT_CONEXION_S:-0.5}
+      TIMEOUT_ESPACIOS_S: ${TIMEOUT_ESPACIOS_S:-1}
+      TIMEOUT_PAGOS_S: ${TIMEOUT_PAGOS_S:-2}
+      TIMEOUT_ACCESO_S: ${TIMEOUT_ACCESO_S:-1.5}
+      TIMEOUT_COMPENSACION_S: ${TIMEOUT_COMPENSACION_S:-5}
+      RETRY_PASOS_INTENTOS: ${RETRY_PASOS_INTENTOS:-2}
+      RETRY_COMPENSACION_INTENTOS: ${RETRY_COMPENSACION_INTENTOS:-3}
+      RETRY_COMPENSACION_ESPERA_S: ${RETRY_COMPENSACION_ESPERA_S:-0.2}   # la segunda espera es el doble
+      CB_VENTANA: ${CB_VENTANA:-10}
+      CB_MINIMO_LLAMADAS: ${CB_MINIMO_LLAMADAS:-5}
+      CB_UMBRAL_FALLOS: ${CB_UMBRAL_FALLOS:-0.5}
+      CB_ESPERA_ABIERTO_S: ${CB_ESPERA_ABIERTO_S:-10}
+      BULKHEAD_ACCESO_CUPOS: ${BULKHEAD_ACCESO_CUPOS:-5}
+      POOL_CONEXIONES: ${POOL_CONEXIONES:-20}
     depends_on:
       db-reservas:
         condition: service_healthy
