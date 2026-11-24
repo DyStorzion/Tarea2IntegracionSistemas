@@ -790,11 +790,11 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   | `app/main.py`, el código de la saga, `db.py`, `modelos.py`, sus pruebas | B |
   | Dos líneas en el lifespan de `main.py` (`iniciar()` y `cerrar()`) | B, al integrar |
   | `requirements.txt` y `Dockerfile` de `reservas` | Ambos: avisarse (C agrega `pytest` y `COPY tests`; B, SQLAlchemy y `asyncpg`) |
-  | Bloque de variables de resiliencia de `reservas` en `docker-compose.yml` | C, avisando al rol A |
+  | Bloque de variables de resiliencia de `reservas` en `docker-compose.yml` (ya declarado por el rol A) | C lo mantiene igual a lo que lee `resiliencia.py`, avisando al rol A |
   | Métricas `dependencia_*`, `circuito_*`, `bulkhead_*` | C |
   | Métricas `saga_*` | B |
 
-- **Variables de entorno** (D-48), con sus valores por defecto: `RESILIENCE_ENABLED=true`, `POOL_CONEXIONES=20`, `TIMEOUT_CONEXION_S=0.5`, `TIMEOUT_ESPACIOS_S=1`, `TIMEOUT_PAGOS_S=2`, `TIMEOUT_ACCESO_S=1.5`, `TIMEOUT_COMPENSACION_S=5`, `CB_VENTANA=10`, `CB_MINIMO_LLAMADAS=5`, `CB_UMBRAL_FALLOS=0.5`, `CB_ESPERA_ABIERTO_S=10`, `BULKHEAD_ACCESO_CUPOS=5`, `RETRY_INTENTOS_PASO=2`, `RETRY_INTENTOS_COMPENSACION=3`.
+- **Variables de entorno** (D-48), con sus valores por defecto: `RESILIENCE_ENABLED=true`, `POOL_CONEXIONES=20`, `TIMEOUT_CONEXION_S=0.5`, `TIMEOUT_ESPACIOS_S=1`, `TIMEOUT_PAGOS_S=2`, `TIMEOUT_ACCESO_S=1.5`, `TIMEOUT_COMPENSACION_S=5`, `CB_VENTANA=10`, `CB_MINIMO_LLAMADAS=5`, `CB_UMBRAL_FALLOS=0.5`, `CB_ESPERA_ABIERTO_S=10`, `BULKHEAD_ACCESO_CUPOS=5`, `RETRY_PASOS_INTENTOS=2`, `RETRY_COMPENSACION_INTENTOS=3`, `RETRY_COMPENSACION_ESPERA_S=0.2` (primera espera entre compensaciones; la segunda es el doble). Son los mismos nombres que declaran `docker-compose.yml` y `.env.example`.
 - **Trabajo en paralelo:** el rol C sube primero una versión de `resiliencia.py` con esta interfaz que hace llamadas simples (con timeout, sin los patrones). El rol B escribe el orquestador contra ella desde ese momento; después, el rol C completa el módulo sin que cambie la interfaz.
 - **Alternativas descartadas:**
   - *Patrones escritos dentro del código de la saga:* mezcla responsabilidades, los dos roles editarían las mismas funciones y `RESILIENCE_ENABLED` quedaría repartido por todo el código.
