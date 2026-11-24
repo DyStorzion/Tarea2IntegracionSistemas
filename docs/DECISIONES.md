@@ -73,6 +73,10 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-53 | Reglas del paso 1 | Repetición → 200; índice único; `422 FRANJA_PASADA` en hora local | Aceptada |
 | D-54 | Frontera entre orquestador y resiliencia | Toda llamada a dependencias pasa por `app/resiliencia.py`; el orquestador decide qué hacer con el resultado | Aceptada |
 | D-55 | Fuentes del BFF | 502 si fallan Espacios o Pagos; solo Acceso se degrada | Aceptada |
+| D-56 | Scripts de k6 | Uno por escenario, con su línea de tiempo de fallas y fases etiquetadas | Aceptada |
+| D-57 | Escenarios de evidencia | Éxito, compensación, cascada contenida y uno propio del Bulkhead | Aceptada |
+| D-58 | Carga de las pruebas | Repartida entre los dos consumidores, sin cambiar parámetros | Aceptada |
+| D-59 | Resultados de k6 | Resumen por corrida en `k6/resultados/` con umbrales que pasan con los patrones y fallan sin ellos | Aceptada |
 
 ---
 
@@ -809,6 +813,49 @@ Límite aceptado: si dos o más dependencias están lentas a la vez, la saga pue
   - *Decoradores que el orquestador aplica a cada llamada:* si se olvida uno, esa llamada queda sin protección y fuera del pool compartido.
   - *Un proxy aparte (p. ej. Envoy) con los patrones:* infraestructura extra y contradice la implementación propia de D-14.
 - **Justificación:** cada rol trabaja en sus propios archivos y puede probar su parte por separado. Las garantías de resiliencia quedan en un solo lugar, y el comportamiento con y sin los patrones (D-20) se cambia sin tocar el código de la saga.
+
+---
+
+## 12. Pruebas de carga y evidencia (k6)
+
+### D-56 · Un script de k6 por escenario, con su línea de tiempo de fallas
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada · **Precisa:** D-21, D-50
+- **Decisión:** `k6/exito.js`, `k6/compensacion.js`, `k6/cascada.js` y `k6/bulkhead.js`, con el código común en `k6/lib/`. Cada script inyecta y retira sus fallas llamando a `/admin/chaos` dentro de la red, en tiempos fijos, y etiqueta cada petición con su fase (`normal`, `falla`, `recuperacion`, y `deteccion` en el escenario de cascada: los primeros segundos de la falla, mientras el circuito junta los fallos que necesita para abrir). Los 2 s posteriores a cada cambio se marcan `transicion` y no se evalúan con las reglas estrictas. Detener un contenedor (Acceso caído de verdad) queda como paso manual, porque k6 no controla Docker.
+- **Alternativas descartadas:**
+  - *Un solo script con todos los escenarios en secuencia:* una sola corrida para el video, pero repetir una parte obliga a correr todo.
+  - *Un script con el escenario como parámetro:* más corto, pero menos legible y más difícil de mostrar.
+- **Justificación:** cada escenario se corre y se repite por separado, y calza 1:1 con la tabla de escenarios del README y con las partes del video.
+
+### D-57 · Cuatro escenarios: los tres del enunciado y uno propio del Bulkhead
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+
+  | Escenario | Falla inyectada | Qué demuestra |
+  |---|---|---|
+  | 1. Éxito | Ninguna | Los tres pasos quedan firmes (`201 CONFIRMADA`) |
+  | 2. Compensación | Acceso en modo `error` | La saga se compensa en orden inverso (`502 COMPENSADA`); tras unos fallos el circuito abre y las siguientes se rechazan sin cobrar (`503`) |
+  | 3. Cascada contenida | Acceso lento (3 s, más que el timeout) y en paralelo consultas de disponibilidad | El circuito abre y las reservas fallan rápido; la consulta de disponibilidad sigue respondiendo igual |
+  | 4. Bulkhead | Acceso lento pero **dentro** del timeout (1,3 s), con ~16 reservas/s | El Circuit Breaker no abre (las llamadas responden a tiempo); el Bulkhead limita a 5 las llamadas a Acceso y rechaza el exceso (`503 ACCESO_SATURADO`). Sin Bulkhead, Acceso ocupa el pool y las reservas fallan en Espacios o Pagos aunque estén sanos |
+
+- **Alternativas descartadas:**
+  - *Solo los tres del enunciado:* en el escenario 3 el circuito abre en un par de segundos y el Bulkhead casi no actúa, así que no se vería lo que aporta por sobre el Circuit Breaker (D-43).
+- **Justificación:** cada patrón tiene un escenario donde es el que marca la diferencia.
+
+### D-58 · La carga se reparte entre los dos consumidores, sin cambiar parámetros
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:** las reservas se alternan entre `cliente-demo` y `cliente-demo-2`, sin pasar de 9 peticiones por segundo por consumidor (Kong limita a 10). Los escenarios usan los valores acordados (D-40 a D-48); entre una corrida y otra solo cambia `RESILIENCE_ENABLED`.
+- **Alternativas descartadas:**
+  - *Achicar el pool para el experimento (`POOL_CONEXIONES=10`):* satura con menos carga, pero el resultado dependería de un parámetro ajustado a propósito.
+  - *Llamar a `reservas` sin pasar por Kong:* no hay límite de tasa, pero se pierde la vista del cliente (códigos y latencias en el gateway).
+  - *Subir el límite de Kong:* lo decide el rol A (P-02) y no hace falta.
+- **Justificación:** el experimento muestra el sistema tal como se entrega, sin valores elegidos para que el resultado salga.
+
+### D-59 · Cada corrida guarda su resumen y tiene umbrales de aprobación
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:** al terminar, cada script escribe en `k6/resultados/` un JSON y un texto con el escenario, la fecha, si los patrones estaban activos, las sagas por fase y estado, las latencias y el resultado de cada umbral. Los umbrales expresan lo que el patrón debe garantizar (p. ej. "durante la falla, las reservas responden en menos de 1 s", "ninguna reserva falla en Espacios o Pagos"): con los patrones activos pasan y sin ellos fallan. Los resultados no se versionan, salvo las corridas que se usen en el informe.
+- **Alternativas descartadas:**
+  - *Solo la salida en consola y Grafana:* habría que copiar los números a mano al informe.
+- **Consecuencia:** el servicio `k6` del compose monta `./k6/resultados` con permiso de escritura (avisar al rol A).
 
 ---
 
