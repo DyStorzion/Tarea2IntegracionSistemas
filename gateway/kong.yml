@@ -7,6 +7,7 @@ _transform: true
 #   /api/reservas/abc        -> reservas  /reservas/abc
 #   /api/espacios?fecha=...  -> espacios  /espacios?fecha=...
 #   /bff/web/mis-reservas/x  -> bff-web   /mis-reservas/x
+# El BFF solo se expone bajo /mis-reservas: sus /health y /metrics quedan fuera del gateway.
 services:
   - name: reservas
     url: http://reservas:8000/reservas
@@ -34,14 +35,15 @@ services:
         strip_path: true
 
   - name: bff-web
-    url: http://bff-web:8000
+    url: http://bff-web:8000/mis-reservas
     connect_timeout: 2000
     read_timeout: 10000
     write_timeout: 10000
     retries: 0
     routes:
       - name: bff-web-api
-        paths: [/bff/web]
+        paths: [/bff/web/mis-reservas]
+        methods: [GET]
         strip_path: true
 
 # Cliente identificado por el claim `iss` del JWT (plugin jwt, key_claim_name: iss).
