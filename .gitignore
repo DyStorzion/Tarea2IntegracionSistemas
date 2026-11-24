@@ -219,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Resultados de k6: se versionan solo las corridas que se usen en el informe (git add -f)
+k6/resultados/*
+!k6/resultados/.gitkeep

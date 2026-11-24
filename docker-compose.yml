@@ -189,6 +189,7 @@ services:
       BASE_URL: http://kong:8000
     volumes:
       - ./k6:/scripts:ro
+      - ./k6/resultados:/resultados   # resumen de cada corrida de los escenarios de falla
 
 networks:
   interna: {}
