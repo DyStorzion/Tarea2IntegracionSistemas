@@ -9,6 +9,7 @@ from datetime import date, datetime, time
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from prometheus_client import Counter, make_asgi_app
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,7 @@ from app.contrato import (
     ReservaEspacioOut,
 )
 from app.db import Sesion, crear_tablas, engine, obtener_sesion
-from app.modelos import ANULADA, CATALOGO, RESERVADA, Espacio, ReservaEspacio
+from app.modelos import ANULADA, CATALOGO, LIBERADA, RESERVADA, Espacio, ReservaEspacio
 
 logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {SERVICE_NAME} %(levelname)s %(message)s")
 log = logging.getLogger(SERVICE_NAME)
@@ -145,13 +146,31 @@ async def reservar(body: ReservaEspacioIn, response: Response, sesion: AsyncSess
 
 
 @app.post("/reservas-espacio/{saga_id}/liberar", response_model=LiberacionOut)
-async def liberar(saga_id: str):
+async def liberar(saga_id: str, sesion: AsyncSession = Depends(obtener_sesion)):
     """Compensación del paso 1. Siempre responde 200.
 
     - Reserva existente: queda LIBERADA (si ya lo estaba, no hace nada).
     - Sin reserva para ese saga_id: registra la saga como ANULADA.
     """
-    raise no_implementado()
+    # 1) Si no hay registro, deja la saga ANULADA: una reserva que llegue después será rechazada (D-39).
+    await sesion.execute(
+        insert(ReservaEspacio)
+        .values(saga_id=saga_id, estado=ANULADA)
+        .on_conflict_do_nothing(index_elements=[ReservaEspacio.saga_id])
+    )
+    # 2) Si había una reserva vigente, la libera y el bloque vuelve a estar disponible
+    #    (el índice un_cliente_por_bloque solo cuenta las RESERVADA).
+    await sesion.execute(
+        update(ReservaEspacio)
+        .where(ReservaEspacio.saga_id == saga_id, ReservaEspacio.estado == RESERVADA)
+        .values(estado=LIBERADA)
+    )
+    await sesion.commit()
+    reserva = await sesion.get(ReservaEspacio, saga_id)
+
+    OPERACIONES.labels("liberar", reserva.estado.lower()).inc()
+    log.info("liberación saga_id=%s estado=%s", saga_id, reserva.estado)
+    return LiberacionOut(saga_id=saga_id, estado=reserva.estado)
 
 
 @app.get(
