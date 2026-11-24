@@ -3,6 +3,10 @@
 Kong lo expone bajo /bff/web. Compone en una sola respuesta datos de Espacios, Pagos y Acceso;
 no contiene reglas de negocio.
 
+Fuentes obligatorias y opcionales (D-54): si Espacios o Pagos no responden, el BFF contesta 502
+(la vista sin el espacio o sin el estado del pago podría leerse como "no hay reserva" o "no pagó").
+Solo Acceso es opcional: si no responde, la vista se entrega con `degradado: true`.
+
 Convenciones comunes a todos los servicios:
 - Rutas en kebab-case; campos JSON en snake_case; valores de enumeraciones en MAYÚSCULAS.
 - Errores: {"detail": {"codigo": "...", "mensaje": "..."}}.
@@ -19,6 +23,8 @@ QR_NO_DISPONIBLE = "no disponible"
 # ------------------------------------------------------------------ Errores
 class CodigoError(str, Enum):
     RESERVA_NO_EXISTE = "RESERVA_NO_EXISTE"
+    ESPACIOS_FALLO = "ESPACIOS_FALLO"
+    PAGOS_FALLO = "PAGOS_FALLO"
     NO_IMPLEMENTADO = "NO_IMPLEMENTADO"
 
 
@@ -33,9 +39,7 @@ class ErrorRespuesta(BaseModel):
 
 # ------------------------------------------------------------------ Vista agregada
 class FuenteDatos(str, Enum):
-    ESPACIOS = "ESPACIOS"
-    PAGOS = "PAGOS"
-    ACCESO = "ACCESO"
+    ACCESO = "ACCESO"  # la única fuente que puede faltar en una respuesta 200 (D-54)
 
 
 class EspacioVista(BaseModel):
@@ -72,8 +76,8 @@ class MiReservaOut(BaseModel):
     )
 
     saga_id: str
-    espacio: EspacioVista | None = Field(description="null si Espacios no respondió")
-    pago: PagoVista | None = Field(description="null si no hubo cobro o si Pagos no respondió")
+    espacio: EspacioVista = Field(description="Siempre presente: si Espacios no responde, el BFF contesta 502")
+    pago: PagoVista | None = Field(description="null si Pagos informa que no hubo cobro; si Pagos no responde, el BFF contesta 502")
     acceso: AccesoVista
-    degradado: bool = Field(description="true si alguna fuente no respondió y la vista está incompleta")
+    degradado: bool = Field(description="true si Acceso no respondió y la vista está incompleta")
     no_disponibles: list[FuenteDatos] = Field(default_factory=list)
