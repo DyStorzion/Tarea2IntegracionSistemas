@@ -1,13 +1,17 @@
 """Consulta a una fuente de datos y clasificación de su resultado.
 
 Ninguna excepción de red sale de aquí: cada consulta termina en un `Resultado` que el
-endpoint sabe interpretar.
+endpoint sabe interpretar. Cada consulta reenvía X-Request-ID, deja una métrica y una línea de log.
 """
+import time
 from dataclasses import dataclass
 from enum import Enum
 
 import httpx
 from pydantic import BaseModel, ValidationError
+
+from app.logs import log
+from app.metricas import CONSULTAS, LATENCIA
 
 
 class Resultado(str, Enum):
@@ -36,16 +40,7 @@ def _codigo_de_error(respuesta: httpx.Response) -> str | None:
     return detalle.get("codigo") if isinstance(detalle, dict) else None
 
 
-async def consultar(
-    cliente: httpx.AsyncClient, ruta: str, codigo_no_existe: str, modelo: type[BaseModel]
-) -> Consulta:
-    try:
-        respuesta = await cliente.get(ruta)
-    except httpx.TimeoutException:
-        return Consulta(Resultado.TIMEOUT)
-    except httpx.HTTPError:
-        return Consulta(Resultado.ERROR)
-
+def _clasificar(respuesta: httpx.Response, codigo_no_existe: str, modelo: type[BaseModel]) -> Consulta:
     if respuesta.status_code == 200:
         try:
             return Consulta(Resultado.OK, modelo.model_validate(respuesta.json()))
@@ -56,3 +51,36 @@ async def consultar(
     if respuesta.status_code == 404 and _codigo_de_error(respuesta) == codigo_no_existe:
         return Consulta(Resultado.NO_EXISTE)
     return Consulta(Resultado.ERROR)
+
+
+async def consultar(
+    cliente: httpx.AsyncClient,
+    fuente: str,
+    ruta: str,
+    codigo_no_existe: str,
+    modelo: type[BaseModel],
+    request_id: str,
+    saga_id: str,
+) -> Consulta:
+    inicio = time.perf_counter()
+    try:
+        respuesta = await cliente.get(ruta, headers={"X-Request-ID": request_id} if request_id else None)
+        consulta = _clasificar(respuesta, codigo_no_existe, modelo)
+        http_status = respuesta.status_code
+    except httpx.TimeoutException:
+        consulta, http_status = Consulta(Resultado.TIMEOUT), None
+    except httpx.HTTPError:
+        consulta, http_status = Consulta(Resultado.ERROR), None
+
+    duracion = time.perf_counter() - inicio
+    CONSULTAS.labels(fuente, consulta.resultado.value).inc()
+    LATENCIA.labels(fuente).observe(duracion)
+    log.info(
+        "consulta_fuente",
+        extra={"campos": {
+            "request_id": request_id, "saga_id": saga_id, "fuente": fuente,
+            "resultado": consulta.resultado.value, "http_status": http_status,
+            "duracion_ms": round(duracion * 1000),
+        }},
+    )
+    return consulta
