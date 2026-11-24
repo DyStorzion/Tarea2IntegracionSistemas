@@ -32,10 +32,25 @@ def test_sin_x_request_id_no_envia_el_header(bff):
     assert vistos == [None] * 3
 
 
-def test_logs_json_con_request_id(bff, caplog):
-    with caplog.at_level(logging.INFO, logger="bff-web"):
+def test_logs_json_con_request_id(bff):
+    # El logger del BFF no propaga al raíz (para no duplicar líneas), así que se captura
+    # enganchando un manejador directamente a él, sin depender del plugin de logging de pytest.
+    registros = []
+
+    class Acumulador(logging.Handler):
+        def emit(self, record):
+            registros.append(record)
+
+    logger = logging.getLogger("bff-web")
+    manejador = Acumulador()
+    logger.addHandler(manejador)
+    try:
         bff(acceso=sin_respuesta).get(URL, headers={"X-Request-ID": "req-9"})
-    campos = [r.campos for r in caplog.records if hasattr(r, "campos")]
+    finally:
+        logger.removeHandler(manejador)
+
+    campos = [r.campos for r in registros if hasattr(r, "campos")]
+    assert len(campos) == 4  # una por fuente y la de cierre
     assert all(c["request_id"] == "req-9" for c in campos)
     acceso = next(c for c in campos if c.get("fuente") == "ACCESO")
     assert acceso["resultado"] == "TIMEOUT"
