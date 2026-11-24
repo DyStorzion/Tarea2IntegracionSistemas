@@ -9,6 +9,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# Pruebas unitarias del módulo de resiliencia (no necesitan los demás servicios)
+#   docker compose exec reservas pytest -q -p no:cacheprovider tests
+COPY tests ./tests
 
 EXPOSE 8000
 
