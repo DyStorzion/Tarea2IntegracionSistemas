@@ -1,0 +1,37 @@
+Escenario compensacion · sin-patrones · 2026-11-25 01:40:46 UTC
+Acceso responde 500 durante 40 s: las sagas se compensan y ninguna queda a medias.
+
+Línea de tiempo:
+     0 s  normal        
+    15 s  falla         acceso error
+    55 s  recuperacion  acceso ok
+    80 s  fin
+
+Umbrales (lo que el patrón debe garantizar):
+  ✓ ninguna saga queda a medias (COMPENSACION_PENDIENTE) ni sin respuesta · medido 1
+  ✓ durante la falla hay sagas compensadas en orden inverso · medido 76
+  ✓ durante la falla ninguna reserva queda confirmada sin puerta habilitada · medido 1
+  ✓ antes de la falla todas las reservas quedan CONFIRMADAS · medido 1
+
+Sagas por fase y estado:
+  fase             CONFIRMADA    COMPENSADA     RECHAZADA     PENDIENTE SIN RESPUESTA
+  normal                   30             0             0             0             0
+  falla                     0            76             0             0             0
+  recuperacion             46             0             0             0             0
+  transicion                4             4             0             0             0
+
+Motivo de las sagas no confirmadas:
+  falla        ACCESO_FALLO 76
+  transicion   ACCESO_FALLO 4
+
+Latencias vistas por el cliente:
+  reserva · normal           p50    51 ms   p95    55 ms   máx    85 ms
+  reserva · falla            p50    72 ms   p95    97 ms   máx   164 ms
+  reserva · recuperacion     p50    54 ms   p95    67 ms   máx    88 ms
+  reserva · transicion       p50    69 ms   p95    84 ms   máx    89 ms
+
+Verificaciones:
+  ✓ la saga termina en un estado final consistente: 160 pasan, 0 fallan
+  ✓ el código HTTP corresponde al estado de la saga: 160 pasan, 0 fallan
+  ✓ sin falla la reserva queda confirmada: 30 pasan, 0 fallan
+  ✓ durante la falla ninguna reserva se confirma: 76 pasan, 0 fallan

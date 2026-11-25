@@ -1,0 +1,46 @@
+Escenario cascada · con-patrones · 2026-11-25 01:36:52 UTC
+Acceso tarda 3 s durante 60 s: las reservas fallan rápido y la consulta de disponibilidad sigue igual.
+
+Línea de tiempo:
+     0 s  normal        
+    20 s  deteccion     acceso slow 3000 ms
+    26 s  falla         
+    80 s  recuperacion  acceso ok
+   110 s  fin
+
+Umbrales (lo que el patrón debe garantizar):
+  ✓ durante la falla las reservas responden en menos de 1 s (p95): fallan rápido en vez de esperar a Acceso · medido 69 ms
+  ✓ durante la falla la consulta de disponibilidad responde en menos de 300 ms (p95) · medido 9 ms
+  ✓ todas las consultas de disponibilidad responden 200 · medido 1
+  ✓ ninguna saga queda a medias (COMPENSACION_PENDIENTE) ni sin respuesta · medido 1
+
+Sagas por fase y estado:
+  fase             CONFIRMADA    COMPENSADA     RECHAZADA     PENDIENTE SIN RESPUESTA
+  normal                   80             0             0             0             0
+  deteccion                 0             3            13             0             0
+  falla                     0            28           179             0             0
+  recuperacion             74             0            39             0             0
+  transicion                0            15             9             0             0
+
+Motivo de las sagas no confirmadas:
+  deteccion    ACCESO_FALLO 3 · ACCESO_NO_DISPONIBLE 13
+  falla        ACCESO_FALLO 4 · ACCESO_NO_DISPONIBLE 203
+  recuperacion ACCESO_NO_DISPONIBLE 39
+  transicion   ACCESO_FALLO 7 · ACCESO_NO_DISPONIBLE 15 · ACCESO_SATURADO 2
+
+Latencias vistas por el cliente:
+  reserva · normal           p50    55 ms   p95    76 ms   máx   129 ms
+  reserva · deteccion        p50    14 ms   p95  4601 ms   máx  4638 ms
+  reserva · falla            p50    15 ms   p95    69 ms   máx  4679 ms
+  reserva · recuperacion     p50    49 ms   p95    61 ms   máx   151 ms
+  reserva · transicion       p50    65 ms   p95  4609 ms   máx  4611 ms
+  consulta · normal          p50     5 ms   p95    13 ms   máx    33 ms
+  consulta · deteccion       p50     6 ms   p95     9 ms   máx    10 ms
+  consulta · falla           p50     5 ms   p95     9 ms   máx    11 ms
+  consulta · recuperacion    p50     5 ms   p95     8 ms   máx    13 ms
+  consulta · transicion      p50     5 ms   p95     9 ms   máx    12 ms
+
+Verificaciones:
+  ✓ la consulta de disponibilidad responde 200: 221 pasan, 0 fallan
+  ✓ la saga termina en un estado final consistente: 440 pasan, 0 fallan
+  ✓ el código HTTP corresponde al estado de la saga: 440 pasan, 0 fallan

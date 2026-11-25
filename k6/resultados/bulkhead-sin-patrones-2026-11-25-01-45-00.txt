@@ -1,0 +1,40 @@
+Escenario bulkhead · sin-patrones · 2026-11-25 01:45:00 UTC
+Acceso tarda 1,3 s (dentro del timeout) con 16 reservas/s: el Bulkhead evita que contagie a Espacios y Pagos.
+
+Línea de tiempo:
+     0 s  normal        
+    20 s  falla         acceso slow 1300 ms
+    80 s  recuperacion  acceso ok
+   100 s  fin
+
+Umbrales (lo que el patrón debe garantizar):
+  ✗ durante la falla ninguna reserva falla en Espacios o Pagos (no se contagian de Acceso) · medido 0.946
+  ✓ durante la falla Acceso sigue confirmando reservas al ritmo que alcanza · medido 875
+  ✓ ninguna saga queda a medias (COMPENSACION_PENDIENTE) ni sin respuesta · medido 1
+  ✓ todas las consultas de disponibilidad responden 200 · medido 1
+
+Sagas por fase y estado:
+  fase             CONFIRMADA    COMPENSADA     RECHAZADA     PENDIENTE SIN RESPUESTA
+  normal                  319             0             0             0             0
+  falla                   875            50             0             0             0
+  recuperacion            293             0             0             0             0
+  transicion               64             0             0             0             0
+
+Motivo de las sagas no confirmadas:
+  falla        ESPACIOS_FALLO 50
+
+Latencias vistas por el cliente:
+  reserva · normal           p50    53 ms   p95    83 ms   máx   165 ms
+  reserva · falla            p50  3020 ms   p95  3590 ms   máx  3850 ms
+  reserva · recuperacion     p50    51 ms   p95    61 ms   máx   106 ms
+  reserva · transicion       p50   645 ms   p95  1461 ms   máx  1534 ms
+  consulta · normal          p50     5 ms   p95     8 ms   máx    25 ms
+  consulta · falla           p50     5 ms   p95    10 ms   máx    25 ms
+  consulta · recuperacion    p50     5 ms   p95     9 ms   máx    19 ms
+  consulta · transicion      p50     5 ms   p95     9 ms   máx    10 ms
+
+Verificaciones:
+  ✓ la consulta de disponibilidad responde 200: 200 pasan, 0 fallan
+  ✓ la saga termina en un estado final consistente: 1601 pasan, 0 fallan
+  ✓ el código HTTP corresponde al estado de la saga: 1601 pasan, 0 fallan
+  ✗ ninguna reserva falla en Espacios o Pagos: 875 pasan, 50 fallan

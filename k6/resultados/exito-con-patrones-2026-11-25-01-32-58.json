@@ -1,0 +1,679 @@
+{
+  "escenario": "exito",
+  "descripcion": "Sin fallas inyectadas: Espacios, Pagos y Acceso responden y cada reserva queda CONFIRMADA.",
+  "fecha": "2026-11-25 01:32:58",
+  "patrones": "con-patrones",
+  "linea": [
+    {
+      "desde": 0,
+      "fase": "normal"
+    }
+  ],
+  "umbrales": [
+    {
+      "metrica": "checks{check:la reserva queda confirmada}",
+      "condicion": "rate==1",
+      "etiqueta": "todas las reservas quedan CONFIRMADAS (201)",
+      "ok": true,
+      "valor": 1
+    },
+    {
+      "metrica": "http_req_duration{escenario:reserva}",
+      "condicion": "p(95)<500",
+      "etiqueta": "p95 de las reservas bajo 500 ms",
+      "ok": true,
+      "valor": 94.654313
+    }
+  ],
+  "sagas": {
+    "normal": {
+      "CONFIRMADA": 121,
+      "COMPENSADA": 0,
+      "RECHAZADA": 0,
+      "COMPENSACION_PENDIENTE": 0,
+      "SIN_RESPUESTA": 0
+    }
+  },
+  "errores": {},
+  "latencias": {
+      "reserva · normal": {
+        "p50": 54.567304,
+        "p95": 94.654313,
+        "max": 151.816255
+      }
+    },
+  "checks": [
+      {
+        "nombre": "la saga termina en un estado final consistente",
+        "pasan": 121,
+        "fallan": 0
+      },
+      {
+        "nombre": "el código HTTP corresponde al estado de la saga",
+        "pasan": 121,
+        "fallan": 0
+      },
+      {
+        "nombre": "la reserva queda confirmada",
+        "pasan": 121,
+        "fallan": 0
+      }
+    ],
+  "metricas": {
+      "sagas{fase:transicion,estado:RECHAZADA}": {
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default"
+      },
+      "data_sent": {
+        "type": "counter",
+        "contains": "data",
+        "values": {
+          "count": 53775,
+          "rate": 1781.6550114268016
+        }
+      },
+      "vus": {
+        "type": "gauge",
+        "contains": "default",
+        "values": {
+          "value": 0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "http_reqs": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 126,
+          "rate": 4.174589148113008
+        }
+      },
+      "http_req_failed": {
+        "type": "rate",
+        "contains": "default",
+        "values": {
+          "rate": 0,
+          "passes": 0,
+          "fails": 126
+        }
+      },
+      "checks{check:la reserva queda confirmada}": {
+        "values": {
+          "rate": 1,
+          "passes": 121,
+          "fails": 0
+        },
+        "thresholds": {
+          "rate==1": {
+            "ok": true
+          }
+        },
+        "type": "rate",
+        "contains": "default"
+      },
+      "sagas{fase:normal,error:ESPACIO_NO_EXISTE}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,estado:COMPENSACION_PENDIENTE}": {
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default"
+      },
+      "iteration_duration": {
+        "contains": "time",
+        "values": {
+          "avg": 59.12990666393444,
+          "p(50)": 54.6684505,
+          "p(95)": 92.47847495,
+          "max": 127.928483
+        },
+        "type": "trend"
+      },
+      "sagas{fase:transicion,error:PAGOS_FALLO}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,error:FRANJA_PASADA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,error:COMPENSACION_FALLIDA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,estado:SIN_RESPUESTA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,error:FRANJA_PASADA}": {
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        }
+      },
+      "sagas{fase:normal,error:FRANJA_OCUPADA}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "sagas{fase:transicion,error:ACCESO_SATURADO}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,error:ACCESO_NO_DISPONIBLE}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "iterations": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 122,
+          "rate": 4.042062508490373
+        }
+      },
+      "http_req_tls_handshaking": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "max": 0,
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0
+        }
+      },
+      "http_req_waiting": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 57.457751730158705,
+          "p(50)": 54.139790500000004,
+          "p(95)": 93.40593225,
+          "max": 151.677541
+        }
+      },
+      "sagas{fase:normal,error:ESPACIOS_FALLO}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "sagas{fase:normal,error:ACCESO_NO_DISPONIBLE}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,error:PAGOS_FALLO}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "http_req_duration{escenario:reserva,fase:transicion}": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "max": 0
+        },
+        "thresholds": {
+          "p(95)>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,error:ACCESO_SATURADO}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "data_received": {
+        "type": "counter",
+        "contains": "data",
+        "values": {
+          "count": 141546,
+          "rate": 4689.65393300638
+        }
+      },
+      "sagas{fase:transicion,error:ESPACIO_NO_EXISTE}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,error:COMPENSACION_FALLIDA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "rate": 0,
+          "count": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,estado:SIN_RESPUESTA}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "checks": {
+        "values": {
+          "rate": 1,
+          "passes": 363,
+          "fails": 0
+        },
+        "type": "rate",
+        "contains": "default"
+      },
+      "http_req_sending": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 0.057986063492063485,
+          "p(50)": 0.042311,
+          "p(95)": 0.139318,
+          "max": 0.570792
+        }
+      },
+      "sagas{fase:transicion,error:ACCESO_FALLO}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "sagas{fase:transicion,estado:COMPENSADA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,error:ESPACIOS_FALLO}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "http_req_blocked": {
+        "contains": "time",
+        "values": {
+          "p(50)": 0.0053165,
+          "p(95)": 0.38278625,
+          "max": 5.573619,
+          "avg": 0.12270793650793649
+        },
+        "type": "trend"
+      },
+      "http_req_duration{escenario:reserva,fase:normal}": {
+        "values": {
+          "p(95)": 94.654313,
+          "max": 151.816255,
+          "avg": 59.90145948760332,
+          "p(50)": 54.567304
+        },
+        "thresholds": {
+          "p(95)>=0": {
+            "ok": true
+          }
+        },
+        "type": "trend",
+        "contains": "time"
+      },
+      "http_req_duration": {
+        "values": {
+          "avg": 57.63501892063494,
+          "p(50)": 54.285920000000004,
+          "p(95)": 93.98086225,
+          "max": 151.816255
+        },
+        "type": "trend",
+        "contains": "time"
+      },
+      "sagas": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 121,
+          "rate": 4.008930848584714
+        }
+      },
+      "sagas{fase:normal,estado:RECHAZADA}": {
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default"
+      },
+      "sagas{fase:transicion,error:PAGO_RECHAZADO}": {
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter"
+      },
+      "sagas{fase:transicion,estado:CONFIRMADA}": {
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "rate": 0,
+          "count": 0
+        }
+      },
+      "http_req_connecting": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 0.0485019126984127,
+          "p(50)": 0,
+          "p(95)": 0.25445325,
+          "max": 0.477195
+        }
+      },
+      "http_req_duration{escenario:reserva}": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 59.90145948760332,
+          "p(50)": 54.567304,
+          "p(95)": 94.654313,
+          "max": 151.816255
+        },
+        "thresholds": {
+          "p(95)<500": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:normal,estado:CONFIRMADA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "rate": 4.008930848584714,
+          "count": 121
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "sagas{fase:transicion,error:FRANJA_OCUPADA}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "vus_max": {
+        "contains": "default",
+        "values": {
+          "min": 21,
+          "max": 21,
+          "value": 21
+        },
+        "type": "gauge"
+      },
+      "sagas{fase:normal,estado:COMPENSACION_PENDIENTE}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      },
+      "http_req_duration{expected_response:true}": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "p(95)": 93.98086225,
+          "max": 151.816255,
+          "avg": 57.63501892063494,
+          "p(50)": 54.285920000000004
+        }
+      },
+      "http_req_receiving": {
+        "type": "trend",
+        "contains": "time",
+        "values": {
+          "avg": 0.11928112698412695,
+          "p(50)": 0.0872735,
+          "p(95)": 0.15240725,
+          "max": 1.435129
+        }
+      },
+      "sagas{fase:normal,error:PAGO_RECHAZADO}": {
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default"
+      },
+      "sagas{fase:normal,estado:COMPENSADA}": {
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        },
+        "type": "counter",
+        "contains": "default"
+      },
+      "sagas{fase:normal,error:ACCESO_FALLO}": {
+        "type": "counter",
+        "contains": "default",
+        "values": {
+          "count": 0,
+          "rate": 0
+        },
+        "thresholds": {
+          "count>=0": {
+            "ok": true
+          }
+        }
+      }
+    }
+}

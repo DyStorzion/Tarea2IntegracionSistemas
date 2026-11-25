@@ -1,0 +1,1278 @@
+{
+  "escenario": "bulkhead",
+  "descripcion": "Acceso tarda 1,3 s (dentro del timeout) con 16 reservas/s: el Bulkhead evita que contagie a Espacios y Pagos.",
+  "fecha": "2026-11-25 01:38:54",
+  "patrones": "con-patrones",
+  "linea": [
+    {
+      "desde": 0,
+      "fase": "normal"
+    },
+    {
+      "desde": 20,
+      "fase": "falla",
+      "fallas": [
+        [
+          "acceso",
+          "slow",
+          1300
+        ]
+      ]
+    },
+    {
+      "desde": 80,
+      "fase": "recuperacion",
+      "fallas": [
+        [
+          "acceso",
+          "ok"
+        ]
+      ]
+    }
+  ],
+  "umbrales": [
+    {
+      "metrica": "checks{check:ninguna reserva falla en Espacios o Pagos}",
+      "condicion": "rate==1",
+      "etiqueta": "durante la falla ninguna reserva falla en Espacios o Pagos (no se contagian de Acceso)",
+      "ok": true,
+      "valor": 1
+    },
+    {
+      "metrica": "sagas{fase:falla,estado:CONFIRMADA}",
+      "condicion": "count>0",
+      "etiqueta": "durante la falla Acceso sigue confirmando reservas al ritmo que alcanza",
+      "ok": true,
+      "valor": 216
+    },
+    {
+      "metrica": "checks{check:la saga termina en un estado final consistente}",
+      "condicion": "rate==1",
+      "etiqueta": "ninguna saga queda a medias (COMPENSACION_PENDIENTE) ni sin respuesta",
+      "ok": true,
+      "valor": 1
+    },
+    {
+      "metrica": "checks{check:la consulta de disponibilidad responde 200}",
+      "condicion": "rate==1",
+      "etiqueta": "todas las consultas de disponibilidad responden 200",
+      "ok": true,
+      "valor": 1
+    }
+  ],
+  "sagas": {
+    "normal": {
+      "CONFIRMADA": 320,
+      "COMPENSADA": 0,
+      "RECHAZADA": 0,
+      "COMPENSACION_PENDIENTE": 0,
+      "SIN_RESPUESTA": 0
+    },
+    "falla": {
+      "CONFIRMADA": 216,
+      "COMPENSADA": 710,
+      "RECHAZADA": 0,
+      "COMPENSACION_PENDIENTE": 0,
+      "SIN_RESPUESTA": 0
+    },
+    "recuperacion": {
+      "CONFIRMADA": 291,
+      "COMPENSADA": 0,
+      "RECHAZADA": 0,
+      "COMPENSACION_PENDIENTE": 0,
+      "SIN_RESPUESTA": 0
+    },
+    "transicion": {
+      "CONFIRMADA": 41,
+      "COMPENSADA": 23,
+      "RECHAZADA": 0,
+      "COMPENSACION_PENDIENTE": 0,
+      "SIN_RESPUESTA": 0
+    }
+  },
+  "errores": {
+    "falla": {
+      "ACCESO_SATURADO": 710
+    },
+    "transicion": {
+      "ACCESO_SATURADO": 23
+    }
+  },
+  "latencias": {
+    "reserva · normal": {
+      "p50": 49.7490515,
+      "p95": 67.7575057,
+      "max": 110.046666
+    },
+    "reserva · falla": {
+      "p50": 69.19560100000001,
+      "p95": 1361.151771,
+      "max": 1460.639361
+    },
+    "reserva · recuperacion": {
+      "p50": 49.612605,
+      "p95": 62.325267499999995,
+      "max": 148.133882
+    },
+    "reserva · transicion": {
+      "p50": 63.017261000000005,
+      "p95": 1354.52176665,
+      "max": 1366.116779
+    },
+    "consulta · normal": {
+      "p50": 4.6063685,
+      "p95": 6.172624899999999,
+      "max": 9.577572
+    },
+    "consulta · falla": {
+      "p50": 4.8784385,
+      "p95": 8.81548725,
+      "max": 23.182834
+    },
+    "consulta · recuperacion": {
+      "p50": 4.439249,
+      "p95": 6.454414750000001,
+      "max": 6.636634
+    },
+    "consulta · transicion": {
+      "p50": 4.9843625,
+      "p95": 6.3259544,
+      "max": 6.399684
+    }
+  },
+  "checks": [
+    {
+      "nombre": "la consulta de disponibilidad responde 200",
+      "pasan": 200,
+      "fallan": 0
+    },
+    {
+      "nombre": "la saga termina en un estado final consistente",
+      "pasan": 1601,
+      "fallan": 0
+    },
+    {
+      "nombre": "el código HTTP corresponde al estado de la saga",
+      "pasan": 1601,
+      "fallan": 0
+    },
+    {
+      "nombre": "ninguna reserva falla en Espacios o Pagos",
+      "pasan": 926,
+      "fallan": 0
+    }
+  ],
+  "metricas": {
+    "data_received": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 2376625,
+        "rate": 23684.798494306688
+      }
+    },
+    "http_req_duration{escenario:consulta,fase:recuperacion}": {
+      "values": {
+        "p(95)": 6.454414750000001,
+        "max": 6.636634,
+        "avg": 4.651382527777778,
+        "p(50)": 4.439249
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      },
+      "type": "trend",
+      "contains": "time"
+    },
+    "sagas{fase:normal,error:COMPENSACION_FALLIDA}": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "data_sent": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 767539,
+        "rate": 7649.084963560368
+      }
+    },
+    "sagas{fase:transicion,error:ACCESO_SATURADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 23,
+        "rate": 0.22921174580299955
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,estado:CONFIRMADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 0.4085948512140427,
+        "count": 41
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 1601,
+        "rate": 15.955130653504447
+      }
+    },
+    "http_req_failed": {
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 0.40542035398230086,
+        "passes": 733,
+        "fails": 1075
+      }
+    },
+    "sagas{fase:recuperacion,error:FRANJA_PASADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 1460.55022,
+        "avg": 217.993426181969,
+        "p(50)": 61.986937499999996,
+        "p(95)": 1355.974933
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0.08651471183628305,
+        "p(50)": 0.0786765,
+        "p(95)": 0.12735444999999987,
+        "max": 0.702633
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 1460.639361,
+        "avg": 218.1125794457966,
+        "p(50)": 62.121664499999994,
+        "p(95)": 1356.0781651
+      }
+    },
+    "sagas{fase:normal,estado:RECHAZADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,estado:COMPENSADA}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:normal,error:ESPACIOS_FALLO}": {
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "sagas{fase:normal,estado:COMPENSACION_PENDIENTE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,error:ACCESO_NO_DISPONIBLE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,estado:RECHAZADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,estado:SIN_RESPUESTA}": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "sagas{fase:recuperacion,estado:CONFIRMADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 291,
+        "rate": 2.900026870811864
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:ESPACIO_NO_EXISTE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,estado:RECHAZADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:normal,estado:CONFIRMADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 320,
+        "rate": 3.1890329850852113
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:normal,error:FRANJA_PASADA}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 0.16431919999999783,
+        "max": 19.526629,
+        "avg": 0.029738579092920374,
+        "p(50)": 0.0045935
+      }
+    },
+    "http_req_duration{escenario:reserva,fase:falla}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 371.21466705939514,
+        "p(50)": 69.19560100000001,
+        "p(95)": 1361.151771,
+        "max": 1460.639361
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,error:ESPACIO_NO_EXISTE}": {
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:normal,error:PAGOS_FALLO}": {
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:recuperacion,error:FRANJA_OCUPADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 1,
+        "min": 1,
+        "max": 8
+      }
+    },
+    "sagas{fase:falla,error:PAGO_RECHAZADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:ESPACIOS_FALLO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:COMPENSACION_FALLIDA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:normal,error:ACCESO_SATURADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:consulta,fase:normal}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 4.864680000000001,
+        "p(50)": 4.6063685,
+        "p(95)": 6.172624899999999,
+        "max": 9.577572
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:FRANJA_OCUPADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:reserva,fase:normal}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 110.046666,
+        "avg": 52.08346332187502,
+        "p(50)": 49.7490515,
+        "p(95)": 67.7575057
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:COMPENSACION_FALLIDA}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "iteration_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 262.9442663074359,
+        "p(50)": 62.475710500000005,
+        "p(95)": 1355.9491396,
+        "max": 80003.005961
+      }
+    },
+    "sagas{fase:normal,estado:COMPENSADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:consulta,fase:falla}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 5.488616491379307,
+        "p(50)": 4.8784385,
+        "p(95)": 8.81548725,
+        "max": 23.182834
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "checks": {
+      "values": {
+        "rate": 1,
+        "passes": 4328,
+        "fails": 0
+      },
+      "type": "rate",
+      "contains": "default"
+    },
+    "sagas{fase:normal,error:ACCESO_NO_DISPONIBLE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:consulta,fase:transicion}": {
+      "contains": "time",
+      "values": {
+        "avg": 5.087384125,
+        "p(50)": 4.9843625,
+        "p(95)": 6.3259544,
+        "max": 6.399684
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      },
+      "type": "trend"
+    },
+    "sagas{fase:recuperacion,error:COMPENSACION_FALLIDA}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "http_reqs": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 1808,
+        "rate": 18.018036365731444
+      }
+    },
+    "vus_max": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 86,
+        "min": 86,
+        "max": 86
+      }
+    },
+    "sagas{fase:normal,error:ESPACIO_NO_EXISTE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:reserva,fase:recuperacion}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 51.39151351546396,
+        "p(50)": 49.612605,
+        "p(95)": 62.325267499999995,
+        "max": 148.133882
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,error:ESPACIOS_FALLO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:ACCESO_SATURADO}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 7.075666935657813,
+        "count": 710
+      }
+    },
+    "sagas{fase:transicion,error:PAGO_RECHAZADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "checks{check:ninguna reserva falla en Espacios o Pagos}": {
+      "contains": "default",
+      "values": {
+        "rate": 1,
+        "passes": 926,
+        "fails": 0
+      },
+      "thresholds": {
+        "rate==1": {
+          "ok": true
+        }
+      },
+      "type": "rate"
+    },
+    "sagas{fase:transicion,estado:COMPENSACION_PENDIENTE}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 319.2073428465122,
+        "p(50)": 49.721575,
+        "p(95)": 1360.4103553,
+        "max": 1460.639361
+      }
+    },
+    "sagas{fase:recuperacion,estado:SIN_RESPUESTA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 0.328882,
+        "avg": 0.0326385519911504,
+        "p(50)": 0.029886,
+        "p(95)": 0.056832299999999995
+      }
+    },
+    "sagas{fase:transicion,error:FRANJA_OCUPADA}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "sagas{fase:transicion,estado:COMPENSADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 23,
+        "rate": 0.22921174580299955
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:PAGOS_FALLO}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:falla,estado:COMPENSADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 710,
+        "rate": 7.075666935657813
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,estado:RECHAZADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "http_req_duration{escenario:reserva,fase:transicion}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 280.219406828125,
+        "p(50)": 63.017261000000005,
+        "p(95)": 1354.52176665,
+        "max": 1366.116779
+      },
+      "thresholds": {
+        "p(95)>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:normal,error:FRANJA_OCUPADA}": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "iterations": {
+      "values": {
+        "count": 1802,
+        "rate": 17.958241997261094
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "sagas{fase:recuperacion,error:PAGOS_FALLO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,error:ACCESO_SATURADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,error:ACCESO_FALLO}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0.020069719579646022,
+        "p(50)": 0,
+        "p(95)": 0.10711134999999969,
+        "max": 19.422251
+      }
+    },
+    "sagas{fase:normal,estado:SIN_RESPUESTA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:ESPACIO_NO_EXISTE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:FRANJA_PASADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:recuperacion,estado:COMPENSACION_PENDIENTE}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:falla,estado:COMPENSACION_PENDIENTE}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:normal,error:ACCESO_FALLO}": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "sagas{fase:falla,estado:CONFIRMADA}": {
+      "thresholds": {
+        "count>0": {
+          "ok": true
+        },
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 216,
+        "rate": 2.1525972649325174
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0,
+        "p(50)": 0,
+        "p(95)": 0,
+        "max": 0
+      }
+    },
+    "sagas{fase:falla,error:ESPACIOS_FALLO}": {
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default"
+    },
+    "sagas{fase:transicion,error:PAGOS_FALLO}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "checks{check:la saga termina en un estado final consistente}": {
+      "values": {
+        "rate": 1,
+        "passes": 1601,
+        "fails": 0
+      },
+      "thresholds": {
+        "rate==1": {
+          "ok": true
+        }
+      },
+      "type": "rate",
+      "contains": "default"
+    },
+    "sagas{fase:falla,error:ACCESO_FALLO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,estado:SIN_RESPUESTA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "checks{check:la consulta de disponibilidad responde 200}": {
+      "thresholds": {
+        "rate==1": {
+          "ok": true
+        }
+      },
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "rate": 1,
+        "passes": 200,
+        "fails": 0
+      }
+    },
+    "sagas{fase:normal,error:PAGO_RECHAZADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:ACCESO_FALLO}": {
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter"
+    },
+    "sagas{fase:recuperacion,error:PAGO_RECHAZADO}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "count": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:transicion,error:ACCESO_NO_DISPONIBLE}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    },
+    "sagas{fase:falla,error:ACCESO_NO_DISPONIBLE}": {
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      },
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      }
+    },
+    "sagas{fase:falla,error:FRANJA_PASADA}": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 0,
+        "rate": 0
+      },
+      "thresholds": {
+        "count>=0": {
+          "ok": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+Escenario exito · con-patrones · 2026-11-25 01:32:58 UTC
+Sin fallas inyectadas: Espacios, Pagos y Acceso responden y cada reserva queda CONFIRMADA.
+
+Línea de tiempo:
+     0 s  normal        
+    30 s  fin
+
+Umbrales (lo que el patrón debe garantizar):
+  ✓ todas las reservas quedan CONFIRMADAS (201) · medido 1
+  ✓ p95 de las reservas bajo 500 ms · medido 95 ms
+
+Sagas por fase y estado:
+  fase             CONFIRMADA    COMPENSADA     RECHAZADA     PENDIENTE SIN RESPUESTA
+  normal                  121             0             0             0             0
+
+Latencias vistas por el cliente:
+  reserva · normal           p50    55 ms   p95    95 ms   máx   152 ms
+
+Verificaciones:
+  ✓ la saga termina en un estado final consistente: 121 pasan, 0 fallan
+  ✓ el código HTTP corresponde al estado de la saga: 121 pasan, 0 fallan
+  ✓ la reserva queda confirmada: 121 pasan, 0 fallan
