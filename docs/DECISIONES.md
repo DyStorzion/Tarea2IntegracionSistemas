@@ -78,6 +78,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-58 | Carga de las pruebas | Repartida entre los dos consumidores, sin cambiar parámetros | Aceptada |
 | D-59 | Resultados de k6 | Resumen por corrida en `k6/resultados/` con umbrales que pasan con los patrones y fallan sin ellos | Aceptada |
 | D-60 | Saga log | Tablas `sagas` + `pasos_saga`; `Idempotency-Key` única por cliente | Aceptada |
+| D-61 | Reglas del orquestador | Escritura anticipada; repetición → 200 con la saga original; `saga_resultados_total` | Aceptada |
 
 ---
 
@@ -330,6 +331,20 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - *Clave única global:* la clave de un cliente podría devolverle a otro una saga ajena.
   - *Tabla aparte de claves de idempotencia:* una tabla y una escritura más por saga, sin beneficio.
 - **Justificación:** el saga log queda consultable con SQL para la evidencia (p. ej. sagas por estado, compensaciones en orden inverso) y la base resuelve las repeticiones simultáneas.
+
+### D-61 · Reglas del orquestador: escritura anticipada, repeticiones y métricas
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+  - **Escritura anticipada:** la saga se inserta `EN_CURSO` antes del paso 1, y cada paso se guarda apenas termina (D-60).
+  - **`Idempotency-Key` repetida:** responde `200` con la saga original tal como esté, incluso `EN_CURSO`; no ejecuta nada de nuevo. La inserción usa `ON CONFLICT` sobre `(cliente_id, idempotency_key)`, así que dos repeticiones simultáneas no crean dos sagas.
+  - **Métricas `saga_*` (D-54):** contador `saga_resultados_total{estado}` con el estado final de cada saga. Los logs llevan `saga_id` y `request_id` en cada paso.
+  - **Organización:** las rutas en `app/main.py` y la lógica de la saga en `app/saga.py`.
+- **Alternativas descartadas:**
+  - *Guardar todo al final en una transacción:* una caída a mitad de la saga no dejaría rastro de los pasos ya aplicados en otros servicios.
+  - *`409 SAGA_EN_CURSO` ante una repetición en curso:* agrega un código al contrato y a D-35; el cliente puede consultar con `GET` después.
+  - *Histograma de duración de la saga:* k6 ya mide la latencia de punta a punta.
+  - *Sin métricas propias:* D-19 quedaría incompleto.
+- **Evidencia:** `exito.js` de k6 (30 s, 4 reservas/s): 121 de 121 sagas `CONFIRMADA`, p95 de 80 ms.
 
 ---
 
