@@ -134,6 +134,8 @@ async def crear_reserva(
     nueva = await sesion.get(Saga, saga_id)
     log.info("saga_id=%s request_id=%s inicio cliente=%s espacio=%s fecha=%s bloque=%s", saga_id, x_request_id, x_consumer_username, body.espacio_id, body.fecha, body.bloque)
     response.status_code = await saga.ejecutar(sesion, nueva, x_request_id)
+    if response.status_code == 503:  # fail-fast de resiliencia: el circuito vuelve a probar tras esta espera
+        response.headers["Retry-After"] = str(round(resiliencia.CB_ESPERA_ABIERTO_S))
     return await a_salida(sesion, nueva)
 
 
