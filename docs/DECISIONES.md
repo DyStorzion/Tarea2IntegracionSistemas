@@ -79,6 +79,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-59 | Resultados de k6 | Resumen por corrida en `k6/resultados/` con umbrales que pasan con los patrones y fallan sin ellos | Aceptada |
 | D-60 | Saga log | Tablas `sagas` + `pasos_saga`; `Idempotency-Key` única por cliente | Aceptada |
 | D-61 | Reglas del orquestador | Escritura anticipada; repetición → 200 con la saga original; `saga_resultados_total` | Aceptada |
+| D-62 | Rechazo previo y `Retry-After` | Rechazo previo registrado como `RECHAZADA` sin pasos; `Retry-After` = espera del circuito | Aceptada |
 
 ---
 
@@ -345,6 +346,16 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - *Histograma de duración de la saga:* k6 ya mide la latencia de punta a punta.
   - *Sin métricas propias:* D-19 quedaría incompleto.
 - **Evidencia:** `exito.js` de k6 (30 s, 4 reservas/s): 121 de 121 sagas `CONFIRMADA`, p95 de 80 ms.
+
+### D-62 · Rechazo previo registrado y `Retry-After` igual a la espera del circuito
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+  - **Rechazo previo (D-10):** la saga se guarda igual (ya se inserta `EN_CURSO` al empezar) y termina `RECHAZADA` sin pasos, con `503 ACCESO_NO_DISPONIBLE`.
+  - **`Retry-After`:** todos los `503` llevan `CB_ESPERA_ABIERTO_S` (10 s), lo que tarda el circuito en volver a probar.
+- **Alternativas descartadas:**
+  - *No registrar el rechazo previo:* una escritura menos, pero no queda rastro en el saga log ni en `saga_resultados_total`, y la `Idempotency-Key` no reconocería la repetición.
+  - *1 s para el Bulkhead:* más preciso, pero una condición más para un caso que k6 no reintenta.
+  - *Tiempo restante real del circuito:* exacto, pero exige agregar una función a `resiliencia.py` (rol C).
 
 ---
 
