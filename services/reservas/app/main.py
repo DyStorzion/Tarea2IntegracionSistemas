@@ -9,20 +9,16 @@ Las rutas definen el contrato (ver app/contrato.py). Responden 501 hasta impleme
 """
 
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
 from prometheus_client import make_asgi_app
 
+from app import resiliencia
+from app.config import SERVICE_NAME
 from app.contrato import CodigoError, ErrorRespuesta, ReservaIn, SagaOut
-
-SERVICE_NAME = "reservas"
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-ESPACIOS_URL = os.getenv("ESPACIOS_URL", "http://espacios:8000")
-PAGOS_URL = os.getenv("PAGOS_URL", "http://pagos:8000")
-ACCESO_URL = os.getenv("ACCESO_URL", "http://acceso:8000")
-RESILIENCE_ENABLED = os.getenv("RESILIENCE_ENABLED", "true").lower() == "true"
+from app.db import crear_tablas, engine
+from app import modelos  # noqa: F401  registra las tablas del saga log antes de crear_tablas()
 
 logging.basicConfig(level=logging.INFO, format=f"%(asctime)s {SERVICE_NAME} %(levelname)s %(message)s")
 log = logging.getLogger(SERVICE_NAME)
@@ -30,8 +26,11 @@ log = logging.getLogger(SERVICE_NAME)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    log.info("resiliencia %s", "ACTIVADA" if RESILIENCE_ENABLED else "DESACTIVADA")
+    await crear_tablas()
+    await resiliencia.iniciar()  # cliente HTTP compartido (D-43, D-54)
     yield
+    await resiliencia.cerrar()
+    await engine.dispose()
 
 
 app = FastAPI(title="Servicio Reservas (orquestador de la Saga)", version="0.2.0", lifespan=lifespan)
@@ -47,7 +46,7 @@ def no_implementado() -> HTTPException:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": SERVICE_NAME, "resilience_enabled": RESILIENCE_ENABLED}
+    return {"status": "ok", "service": SERVICE_NAME, "resilience_enabled": resiliencia.ACTIVADA}
 
 
 @app.post(
