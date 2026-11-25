@@ -24,7 +24,7 @@
     "/espacios": {
       "get": {
         "summary": "Listar Espacios",
-        "description": "Lista los espacios y sus bloques libres en una fecha.\n\nExpuesto por el gateway como `GET /api/espacios?fecha=...`. No depende de Acceso,\npor lo que sirve para mostrar que el sistema sigue respondiendo cuando Acceso falla.",
+        "description": "Lista los espacios y sus bloques libres en una fecha.\n\nExpuesto por el gateway como `GET /api/espacios?fecha=...`. No depende de Acceso,\npor lo que sirve para mostrar que el sistema sigue respondiendo cuando Acceso falla.\nLos bloques que ya empezaron no se listan (misma regla que al reservar, D-53).",
         "operationId": "listar_espacios_espacios_get",
         "parameters": [
           {

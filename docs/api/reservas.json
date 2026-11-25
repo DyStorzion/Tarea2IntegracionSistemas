@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Servicio Reservas (orquestador de la Saga)",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/health": {
@@ -55,6 +55,24 @@
               "title": "Idempotency-Key"
             },
             "description": "Opcional. Si se repite, devuelve la misma saga en vez de crear otra (evita dobles cobros)"
+          },
+          {
+            "name": "x-request-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lo genera Kong (D-28); se reenvía a las dependencias",
+              "title": "X-Request-Id"
+            },
+            "description": "Lo genera Kong (D-28); se reenvía a las dependencias"
           }
         ],
         "requestBody": {
@@ -118,6 +136,16 @@
               }
             }
           },
+          "422": {
+            "description": "RECHAZADA · FRANJA_PASADA: el bloque ya empezó (D-53)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaOut"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Una dependencia falló o no respondió a tiempo (ESPACIOS_FALLO, PAGOS_FALLO, ACCESO_FALLO): COMPENSADA. Si además falló una compensación: COMPENSACION_PENDIENTE · COMPENSACION_FALLIDA",
             "content": {
@@ -134,16 +162,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SagaOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
