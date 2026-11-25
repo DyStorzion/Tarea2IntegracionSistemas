@@ -98,7 +98,7 @@ curl -i "http://localhost:8000/api/espacios?fecha=2026-11-20" -H "Authorization:
 
 ## Reservar un espacio (Saga)
 
-`POST /api/reservas` ejecuta la Saga orquestada por `reservas` y responde cuando termina, con el resultado y el saga log (D-34). El precio no lo envía el cliente: lo define Espacios (D-33).
+`POST /api/reservas` ejecuta la Saga orquestada por `reservas` y responde cuando termina, con el resultado y el saga log. El precio no lo envía el cliente: lo define Espacios.
 
 | Paso | Servicio | Compensación |
 |---|---|---|
@@ -106,9 +106,9 @@ curl -i "http://localhost:8000/api/espacios?fecha=2026-11-20" -H "Authorization:
 | 2. Cobrar el precio | Pagos | Reembolsar |
 | 3. Habilitar la puerta (devuelve el QR) | Acceso | Revocar |
 
-- Si un paso falla, se compensan **en orden inverso** los pasos ya aplicados. El paso que falló se compensa solo si su resultado es incierto, por ejemplo un timeout (D-45).
-- Si el circuito de Acceso está abierto, la saga se rechaza antes de empezar: no se reserva ni se cobra nada (D-10).
-- El código HTTP indica el resultado (D-35): `201 CONFIRMADA`; `404`, `409` o `422` `RECHAZADA` (espacio inexistente, bloque ocupado o bloque que ya empezó); `402` o `502` `COMPENSADA` (una dependencia falló); `503` con `Retry-After` (el Circuit Breaker o el Bulkhead cortaron la llamada).
+- Si un paso falla, se compensan **en orden inverso** los pasos ya aplicados. El paso que falló se compensa solo si su resultado es incierto, por ejemplo un timeout.
+- Si el circuito de Acceso está abierto, la saga se rechaza antes de empezar: no se reserva ni se cobra nada.
+- El código HTTP indica el resultado: `201 CONFIRMADA`; `404`, `409` o `422` `RECHAZADA` (espacio inexistente, bloque ocupado o bloque que ya empezó); `402` o `502` `COMPENSADA` (una dependencia falló); `503` con `Retry-After` (el Circuit Breaker o el Bulkhead cortaron la llamada).
 - `Idempotency-Key` es opcional: si el mismo cliente repite la clave, recibe la misma saga con `200` y no se cobra dos veces.
 - Cada saga queda en el saga log de `db-reservas` (tablas `sagas` y `pasos_saga`) y en los logs de `reservas`, con su `saga_id` y el `X-Request-ID` de Kong.
 
@@ -157,7 +157,7 @@ Tras unos fallos seguidos el circuito abre, y las reservas siguientes responden 
 | Espacios no conoce el `saga_id` | `404 RESERVA_NO_EXISTE` |
 | Espacios o Pagos lentos, caídos o con error | `502 ESPACIOS_FALLO` / `502 PAGOS_FALLO` |
 
-Acceso es la única fuente opcional: sin el QR la vista sigue siendo útil, mientras que sin el espacio o sin el pago podría leerse como "no hay reserva" o "no pagué" (decisión D-54).
+Acceso es la única fuente opcional: sin el QR la vista sigue siendo útil, mientras que sin el espacio o sin el pago podría leerse como "no hay reserva" o "no pagué".
 
 ```bash
 TOKEN=$(python scripts/generar_token.py)
@@ -248,7 +248,7 @@ Para comparar con y sin los patrones, se repite el mismo escenario levantando `r
 
 ## Parámetros de resiliencia
 
-Los timeouts, el Circuit Breaker, el Bulkhead y los reintentos se configuran con variables de entorno, con los valores acordados por defecto (ver [docs/DECISIONES.md](docs/DECISIONES.md), D-40 a D-49). [.env.example](.env.example) lista todos los nombres. Para un experimento basta cambiar uno, por ejemplo:
+Los timeouts, el Circuit Breaker, el Bulkhead y los reintentos se configuran con variables de entorno, con los valores acordados por defecto (justificados en [docs/DECISIONES.md](docs/DECISIONES.md)). [.env.example](.env.example) lista todos los nombres. Para un experimento basta cambiar uno, por ejemplo:
 
 ```bash
 TIMEOUT_ACCESO_S=1 docker compose up -d
@@ -288,14 +288,15 @@ Los scripts de k6 corren dentro de la red de Docker y pueden cambiar el modo lla
 
 ## Escenarios de falla
 
-**Verificados de punta a punta el 24-11-2026, con los patrones activos:** todos los umbrales pasan y ninguna saga queda a medias.
+**Verificados de punta a punta el 24-11-2026, con y sin los patrones:** con los patrones todos los umbrales pasan, y en ninguna de las dos configuraciones queda una saga a medias.
 
-| Escenario | Resultado medido |
+| Escenario | Resultado medido con los patrones (sin ellos) |
 |---|---|
-| 1. Éxito | 121 de 121 sagas `CONFIRMADA`, p95 de 80 ms |
-| 2. Fallo con compensación | Las sagas que llegan a Acceso quedan `COMPENSADA` (reembolso y liberación en orden inverso). Luego el circuito abre y 76 reservas se rechazan sin cobrar. 0 en `COMPENSACION_PENDIENTE` |
-| 3. Falla en cascada contenida | Con Acceso tardando 3 s, las reservas responden con p95 de 69 ms. La disponibilidad sigue en 13 ms (221 de 221 en `200`) |
-| 4. Bulkhead | 711 reservas rechazadas con `ACCESO_SATURADO`, 217 confirmadas durante la falla y 0 fallas contagiadas a Espacios o Pagos |
+| 1. Éxito | 121 de 121 sagas `CONFIRMADA`, p95 de 95 ms (sin los patrones: igual, p95 de 71 ms) |
+| 2. Fallo con compensación | Las sagas que llegan a Acceso quedan `COMPENSADA` (reembolso y liberación en orden inverso). Luego el circuito abre y 73 reservas se rechazan sin cobrar (sin el circuito: las 76 se cobran y se reembolsan). 0 en `COMPENSACION_PENDIENTE` |
+| 3. Falla en cascada contenida | Con Acceso tardando 3 s, las reservas responden con p95 de 69 ms (sin los patrones: 4,7 s). La disponibilidad sigue en 9 ms (221 de 221 en `200`) |
+| 4. Bulkhead | 710 reservas rechazadas al instante con `ACCESO_SATURADO`, 216 confirmadas durante la falla y 0 fallas contagiadas a Espacios o Pagos (sin el Bulkhead: 50 reservas fallan en Espacios) |
+| Acceso detenido | Las 5 primeras reservas se compensan en ~0,6 s; desde la sexta el circuito abre y se rechazan en menos de 50 ms. Al levantar Acceso, la siguiente llamada de prueba cierra el circuito |
 
 Cada escenario es un script de k6 que genera reservas a través de Kong, inyecta la falla en el momento indicado (llamando a `/admin/chaos` dentro de la red) y la retira al final. Las reservas se reparten entre los dos consumidores para no chocar con el rate limiting.
 
