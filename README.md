@@ -4,7 +4,7 @@ Encargo integrador, Unidad 3 de Integración de Sistemas (Forma O).
 
 Sistema de microservicios que reserva un puesto o sala de cowork coordinando **Espacios**, **Pagos** (pasarela externa) y **Acceso** (controlador externo de puerta con QR) mediante una **Saga orquestada**, expuesto por un **API Gateway** y un **BFF**, y protegido con **timeout, Circuit Breaker y Bulkhead**.
 
-> **Estado:** en desarrollo. Los simuladores de **Pagos** y **Acceso** y el **BFF Web** están implementados; los endpoints de negocio que aún no lo estén responden `501 NO_IMPLEMENTADO` (en ese caso el BFF contesta `502`, ver [BFF Web](#bff-web)).
+> **Estado:** todos los servicios están implementados: gateway, BFF Web, Espacios, simuladores de Pagos y Acceso, y el orquestador de la Saga con su capa de resiliencia. Los escenarios de falla están verificados de punta a punta (ver [Escenarios de falla](#escenarios-de-falla)).
 
 ## Arquitectura
 
@@ -85,6 +85,8 @@ Hay dos consumidores configurados, `cliente-demo` y `cliente-demo-2`, cada uno c
 | `GET` | `/api/espacios?fecha=YYYY-MM-DD` | `espacios` `GET /espacios` → disponibilidad |
 | `GET` | `/bff/web/mis-reservas/{saga_id}` | `bff-web` `GET /mis-reservas/{saga_id}` → vista agregada de Espacios, Pagos y Acceso |
 
+Cómo usar la Saga: ver [Reservar un espacio](#reservar-un-espacio-saga).
+
 Cualquier otra ruta responde `404` desde Kong (el `/health` y el `/metrics` del BFF, por ejemplo, no pasan por el gateway). Cada respuesta trae un encabezado `X-Request-ID`, que Kong también envía al servicio para seguir la petición en los logs.
 
 Ejemplo (Git Bash):
@@ -93,6 +95,54 @@ Ejemplo (Git Bash):
 TOKEN=$(python scripts/generar_token.py)
 curl -i "http://localhost:8000/api/espacios?fecha=2026-11-20" -H "Authorization: Bearer $TOKEN"
 ```
+
+## Reservar un espacio (Saga)
+
+`POST /api/reservas` ejecuta la Saga orquestada por `reservas` y responde cuando termina, con el resultado y el saga log (D-34). El precio no lo envía el cliente: lo define Espacios (D-33).
+
+| Paso | Servicio | Compensación |
+|---|---|---|
+| 1. Reservar el bloque (devuelve el precio) | Espacios | Liberar el bloque |
+| 2. Cobrar el precio | Pagos | Reembolsar |
+| 3. Habilitar la puerta (devuelve el QR) | Acceso | Revocar |
+
+- Si un paso falla, se compensan **en orden inverso** los pasos ya aplicados. El paso que falló se compensa solo si su resultado es incierto, por ejemplo un timeout (D-45).
+- Si el circuito de Acceso está abierto, la saga se rechaza antes de empezar: no se reserva ni se cobra nada (D-10).
+- El código HTTP indica el resultado (D-35): `201 CONFIRMADA`; `404`, `409` o `422` `RECHAZADA` (espacio inexistente, bloque ocupado o bloque que ya empezó); `402` o `502` `COMPENSADA` (una dependencia falló); `503` con `Retry-After` (el Circuit Breaker o el Bulkhead cortaron la llamada).
+- `Idempotency-Key` es opcional: si el mismo cliente repite la clave, recibe la misma saga con `200` y no se cobra dos veces.
+- Cada saga queda en el saga log de `db-reservas` (tablas `sagas` y `pasos_saga`) y en los logs de `reservas`, con su `saga_id` y el `X-Request-ID` de Kong.
+
+Prueba a mano (Git Bash), con una fecha futura:
+
+```bash
+TOKEN=$(python scripts/generar_token.py)
+
+# 1. Disponibilidad del día
+curl -s "http://localhost:8000/api/espacios?fecha=2026-12-10" -H "Authorization: Bearer $TOKEN"
+
+# 2. Reservar: 201, "estado": "CONFIRMADA", con precio, QR y los tres pasos en "pasos"
+curl -s -X POST http://localhost:8000/api/reservas -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -H "Idempotency-Key: demo-1" \
+  -d '{"espacio_id": "SALA-A", "fecha": "2026-12-10", "bloque": 9}'
+
+# 3. Repetir la misma petición: 200, la misma saga (no cobra de nuevo)
+# 4. Otra reserva del mismo bloque sin la clave: 409 RECHAZADA, FRANJA_OCUPADA
+
+# 5. Consultar la saga y la vista del cliente
+curl -s http://localhost:8000/api/reservas/<saga_id> -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8000/bff/web/mis-reservas/<saga_id> -H "Authorization: Bearer $TOKEN"
+```
+
+Compensación a mano (escenario 2): con Acceso en modo `error`, la respuesta es `502 COMPENSADA`, y en `pasos` aparece `HABILITAR_ACCESO: ERROR` seguido de `REEMBOLSAR` y `LIBERAR_ESPACIO`, en ese orden.
+
+```bash
+python scripts/chaos.py acceso error
+curl -s -X POST http://localhost:8000/api/reservas -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"espacio_id": "SALA-B", "fecha": "2026-12-10", "bloque": 11}'
+python scripts/chaos.py acceso ok
+```
+
+Tras unos fallos seguidos el circuito abre, y las reservas siguientes responden `503 RECHAZADA` en milisegundos, con `Retry-After: 10` y sin pasos.
 
 ## BFF Web
 
@@ -238,7 +288,14 @@ Los scripts de k6 corren dentro de la red de Docker y pueden cambiar el modo lla
 
 ## Escenarios de falla
 
-_La verificación de punta a punta queda pendiente hasta que esté implementado el orquestador de la Saga._
+**Verificados de punta a punta el 24-11-2026, con los patrones activos:** todos los umbrales pasan y ninguna saga queda a medias.
+
+| Escenario | Resultado medido |
+|---|---|
+| 1. Éxito | 121 de 121 sagas `CONFIRMADA`, p95 de 80 ms |
+| 2. Fallo con compensación | Las sagas que llegan a Acceso quedan `COMPENSADA` (reembolso y liberación en orden inverso). Luego el circuito abre y 76 reservas se rechazan sin cobrar. 0 en `COMPENSACION_PENDIENTE` |
+| 3. Falla en cascada contenida | Con Acceso tardando 3 s, las reservas responden con p95 de 69 ms. La disponibilidad sigue en 13 ms (221 de 221 en `200`) |
+| 4. Bulkhead | 711 reservas rechazadas con `ACCESO_SATURADO`, 217 confirmadas durante la falla y 0 fallas contagiadas a Espacios o Pagos |
 
 Cada escenario es un script de k6 que genera reservas a través de Kong, inyecta la falla en el momento indicado (llamando a `/admin/chaos` dentro de la red) y la retira al final. Las reservas se reparten entre los dos consumidores para no chocar con el rate limiting.
 
@@ -271,7 +328,7 @@ Con los patrones, los umbrales pasan; sin ellos fallan los que muestran el aport
 
 **Acceso caído de verdad.** k6 no controla Docker, así que este caso se provoca a mano durante cualquier escenario: `docker compose stop acceso` y luego `docker compose start acceso`. Las llamadas fallan al conectar, el circuito abre igual que con la lentitud y las reservas se rechazan de inmediato.
 
-**Evidencia desde el BFF.** Con Espacios y Pagos respondiendo y una saga existente, la degradación de Acceso se puede ver sin esperar al orquestador:
+**Evidencia desde el BFF.** Con una saga confirmada (ver [Reservar un espacio](#reservar-un-espacio-saga)), la degradación de Acceso se ve en la vista del cliente:
 
 ```bash
 python scripts/chaos.py acceso slow 3000   # Acceso tarda más que el timeout del BFF (1,5 s)
