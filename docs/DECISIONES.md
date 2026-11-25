@@ -77,6 +77,7 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
 | D-57 | Escenarios de evidencia | Éxito, compensación, cascada contenida y uno propio del Bulkhead | Aceptada |
 | D-58 | Carga de las pruebas | Repartida entre los dos consumidores, sin cambiar parámetros | Aceptada |
 | D-59 | Resultados de k6 | Resumen por corrida en `k6/resultados/` con umbrales que pasan con los patrones y fallan sin ellos | Aceptada |
+| D-60 | Saga log | Tablas `sagas` + `pasos_saga`; `Idempotency-Key` única por cliente | Aceptada |
 
 ---
 
@@ -318,6 +319,17 @@ Estados posibles: `Aceptada` · `Pendiente` · `Reemplazada`.
   - *UTC:* el bloque 9 quedaría desfasado 3 horas respecto al cowork.
   - *`409 FRANJA_PASADA`:* `409` indica conflicto con el estado; un bloque pasado es un dato inválido.
 - **Evidencia:** con 20 sagas simultáneas por el mismo bloque, exactamente una recibe `201` y las demás `409 FRANJA_OCUPADA`.
+
+### D-60 · Saga log en dos tablas e `Idempotency-Key` única por cliente
+- **Fecha:** 24-11-2026 · **Estado:** Aceptada
+- **Decisión:**
+  - **Saga log:** `sagas` (una fila por saga: estado, datos de la reserva, precio, QR y error) y `pasos_saga` (una fila por paso o compensación, con clave `(saga_id, orden)`). Cada paso se guarda apenas termina, así que si el orquestador se cae queda registrado hasta dónde llegó.
+  - **`Idempotency-Key`:** columna en `sagas` con restricción única `(cliente_id, idempotency_key)`. Las peticiones sin clave no chocan entre sí (Postgres admite varias claves nulas).
+- **Alternativas descartadas:**
+  - *Una tabla con los pasos en una columna JSONB:* cada paso reescribe la lista completa y consultar pasos sueltos con SQL es más incómodo.
+  - *Clave única global:* la clave de un cliente podría devolverle a otro una saga ajena.
+  - *Tabla aparte de claves de idempotencia:* una tabla y una escritura más por saga, sin beneficio.
+- **Justificación:** el saga log queda consultable con SQL para la evidencia (p. ej. sagas por estado, compensaciones en orden inverso) y la base resuelve las repeticiones simultáneas.
 
 ---
 
